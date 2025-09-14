@@ -58,7 +58,7 @@ It helps LLM-based systems **forget smartly, remember what matters, and reduce t
 
 ### 1. Clone the repo
 ```bash
-git clone https://github.com/your-org/memorizer.git
+git clone https://github.com/cyberbeamhq/memorizer.git
 cd memorizer
 ```
 
