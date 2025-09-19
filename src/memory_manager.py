@@ -1,11 +1,16 @@
 import logging
-from datetime import datetime, timedelta
-from dateutil.relativedelta import relativedelta
-from typing import Optional, List, Dict, Any
-import threading
 import queue
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
-from . import db, compression_agent, retrieval, vector_db
+from dateutil.relativedelta import relativedelta
+
+from . import compression_agent, db, retrieval, vector_db
+from .cache import get_cache_manager, invalidate_user_cache
+from .validation import validate_memory_input, validate_query_input
 
 logger = logging.getLogger(__name__)
 
@@ -14,14 +19,21 @@ logger = logging.getLogger(__name__)
 _embedding_queue: "queue.Queue[Dict[str, Any]]" = queue.Queue()
 _stop_worker = threading.Event()
 
+# Thread pool for vector operations to prevent thread exhaustion
+_vector_thread_pool = ThreadPoolExecutor(
+    max_workers=4, thread_name_prefix="vector_worker"
+)
 
-def _send_to_monitoring(level: str, message: str, exc: Optional[Exception] = None):
+
+def _send_to_monitoring(
+    level: str, message: str, exc: Optional[Exception] = None
+) -> None:
     """Stub for sending critical errors to monitoring (Sentry/Prometheus).
     Replace with real integration in production."""
     logger.warning(f"MONITORING[{level}]: {message}")
 
 
-def _embedding_worker():
+def _embedding_worker() -> None:
     while not _stop_worker.is_set():
         try:
             item = _embedding_queue.get(timeout=1)
@@ -30,23 +42,39 @@ def _embedding_worker():
 
         try:
             vector_db.insert_embedding(
-                item["memory_id"], item["user_id"], item["content"], item.get("metadata", {}),
+                item["memory_id"],
+                item["user_id"],
+                item["content"],
+                item.get("metadata", {}),
             )
             logger.debug(f"Inserted embedding for memory {item['memory_id']}")
         except Exception as e:
-            logger.exception(f"Background embedding insert failed for {item['memory_id']}: {e}")
-            _send_to_monitoring("error", f"Embedding insert failed for {item['memory_id']}", e)
+            logger.exception(
+                f"Background embedding insert failed for {item['memory_id']}: {e}"
+            )
+            _send_to_monitoring(
+                "error", f"Embedding insert failed for {item['memory_id']}", e
+            )
             # Persist to retry queue/table so another process can pick up later.
             try:
-                db.enqueue_embedding_retry(item["memory_id"], item["user_id"], item["content"], item.get("metadata", {}))
+                db.enqueue_embedding_retry(
+                    item["memory_id"],
+                    item["user_id"],
+                    item["content"],
+                    item.get("metadata", {}),
+                )
             except Exception as inner:
-                logger.exception(f"Failed to enqueue embedding retry for {item['memory_id']}: {inner}")
+                logger.exception(
+                    f"Failed to enqueue embedding retry for {item['memory_id']}: {inner}"
+                )
         finally:
             _embedding_queue.task_done()
 
 
 # Start background worker thread (daemon so it won't block shutdown)
-_worker_thread = threading.Thread(target=_embedding_worker, daemon=True, name="embedding-worker")
+_worker_thread = threading.Thread(
+    target=_embedding_worker, daemon=True, name="embedding-worker"
+)
 _worker_thread.start()
 
 
@@ -63,7 +91,9 @@ def sanitize_content(content: str) -> str:
         return ""
     # Truncate to maximum allowed length to avoid huge embeddings.
     if len(content) > MAX_CONTENT_LENGTH:
-        logger.debug("Content length exceeds MAX_CONTENT_LENGTH; truncating before storing/embedding")
+        logger.debug(
+            "Content length exceeds MAX_CONTENT_LENGTH; truncating before storing/embedding"
+        )
         return content[:MAX_CONTENT_LENGTH]
     return content
 
@@ -87,34 +117,51 @@ def utc_now() -> datetime:
 # Add New Session
 # ---------------------------
 
-def add_session(user_id: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> str:
+
+def add_session(
+    user_id: str, content: str, metadata: Optional[Dict[str, Any]] = None
+) -> str:
     """
     Add a new interaction (goes into very_new tier).
     Push embedding insertion to a background worker and persist a retry record on failure.
     """
     try:
-        content = sanitize_content(content)
-        metadata = sanitize_metadata(metadata or {})
+        # Validate input parameters
+        validated_data = validate_memory_input(user_id, content, metadata)
+        user_id = validated_data["user_id"]
+        content = validated_data["content"]
+        metadata = validated_data["metadata"]
 
         # Use UTC created_at if db.insert_session accepts it; otherwise db should fill created_at in UTC.
         memory_id = db.insert_session(user_id, content, metadata or {}, tier="very_new")
 
+        # Invalidate user cache since new memory was added
+        invalidate_user_cache(user_id)
+
         # Enqueue embedding insertion to background worker (non-blocking)
         try:
-            _embedding_queue.put_nowait({
-                "memory_id": memory_id,
-                "user_id": user_id,
-                "content": content,
-                "metadata": metadata,
-            })
+            _embedding_queue.put_nowait(
+                {
+                    "memory_id": memory_id,
+                    "user_id": user_id,
+                    "content": content,
+                    "metadata": metadata,
+                }
+            )
         except Exception as e:
             logger.exception(f"Failed to enqueue embedding for memory {memory_id}: {e}")
             # Persist to retry queue immediately
             try:
                 db.enqueue_embedding_retry(memory_id, user_id, content, metadata)
             except Exception as inner:
-                logger.exception(f"Failed to persist embedding retry for {memory_id}: {inner}")
-                _send_to_monitoring("error", f"Critical: could not persist embedding retry for {memory_id}", inner)
+                logger.exception(
+                    f"Failed to persist embedding retry for {memory_id}: {inner}"
+                )
+                _send_to_monitoring(
+                    "error",
+                    f"Critical: could not persist embedding retry for {memory_id}",
+                    inner,
+                )
 
         return memory_id
 
@@ -127,6 +174,7 @@ def add_session(user_id: str, content: str, metadata: Optional[Dict[str, Any]] =
 # ---------------------------
 # Move Memories Between Tiers
 # ---------------------------
+
 
 def move_memory_between_tiers(
     user_id: str,
@@ -149,20 +197,26 @@ def move_memory_between_tiers(
         # Step 1: Move old very_new memories to mid_term
         cutoff_date = utc_now() - timedelta(days=very_new_days)
         # Ensure db.fetch_memories returns ordered results (most recent first)
-        very_new_memories = db.fetch_memories(user_id, "very_new", limit=None, order_by="created_at DESC")
+        very_new_memories = db.fetch_memories(
+            user_id, "very_new", limit=None, order_by="created_at DESC"
+        )
 
         memories_to_compress = []
         total = len(very_new_memories) if very_new_memories else 0
         for idx, mem in enumerate(very_new_memories or []):
             # Move if over limit (older ones) or over time threshold
-            if (total > very_new_limit and idx >= very_new_limit) or (mem.get("created_at") and mem["created_at"] < cutoff_date):
+            if (total > very_new_limit and idx >= very_new_limit) or (
+                mem.get("created_at") and mem["created_at"] < cutoff_date
+            ):
                 memories_to_compress.append(mem)
 
         # Compress and move to mid_term
         for mem in memories_to_compress:
             try:
                 # Compress first (no destructive action yet)
-                compressed = compression_agent.compress_to_mid_term(mem["content"], mem.get("metadata", {}))
+                compressed = compression_agent.compress_to_mid_term(
+                    mem["content"], mem.get("metadata", {})
+                )
 
                 new_content = compressed.get("summary") or mem["content"]
                 new_metadata = compressed.get("metadata", mem.get("metadata", {}))
@@ -189,11 +243,17 @@ def move_memory_between_tiers(
                         db.delete_memory(user_id, mem["id"])
 
                     moved["to_mid_term"].append(new_id)
-                    logger.info(f"Moved memory {mem['id']} from very_new to mid_term as {new_id}")
+                    logger.info(
+                        f"Moved memory {mem['id']} from very_new to mid_term as {new_id}"
+                    )
 
                 except Exception as e:
-                    logger.exception(f"Failed to insert new mid_term memory for {mem['id']}: {e}")
-                    _send_to_monitoring("error", f"Failed mid_term insert for {mem['id']}", e)
+                    logger.exception(
+                        f"Failed to insert new mid_term memory for {mem['id']}: {e}"
+                    )
+                    _send_to_monitoring(
+                        "error", f"Failed mid_term insert for {mem['id']}", e
+                    )
                     # do not delete source memory; leave for retry on next run
 
             except Exception as e:
@@ -202,12 +262,16 @@ def move_memory_between_tiers(
 
         # Step 2: Move old mid_term memories to long_term
         cutoff_date = utc_now() - relativedelta(months=mid_term_months)
-        mid_term_memories = db.fetch_memories(user_id, "mid_term", limit=None, order_by="created_at DESC")
+        mid_term_memories = db.fetch_memories(
+            user_id, "mid_term", limit=None, order_by="created_at DESC"
+        )
 
         memories_to_aggregate = []
         total_mid = len(mid_term_memories) if mid_term_memories else 0
         for idx, mem in enumerate(mid_term_memories or []):
-            if (total_mid > mid_term_limit and idx >= mid_term_limit) or (mem.get("created_at") and mem["created_at"] < cutoff_date):
+            if (total_mid > mid_term_limit and idx >= mid_term_limit) or (
+                mem.get("created_at") and mem["created_at"] < cutoff_date
+            ):
                 memories_to_aggregate.append(mem)
 
         # Aggregate multiple mid_term memories into long_term insights
@@ -216,7 +280,9 @@ def move_memory_between_tiers(
                 contents = [m["content"] for m in memories_to_aggregate]
                 metadata_list = [m.get("metadata", {}) for m in memories_to_aggregate]
 
-                aggregated = compression_agent.compress_to_long_term(contents, metadata_list)
+                aggregated = compression_agent.compress_to_long_term(
+                    contents, metadata_list
+                )
 
                 new_content = aggregated.get("summary") or "\n".join(contents)
                 new_metadata = aggregated.get("metadata", {})
@@ -244,20 +310,32 @@ def move_memory_between_tiers(
                             db.delete_memory(user_id, mem["id"])
 
                     moved["to_long_term"].append(new_id)
-                    logger.info(f"Aggregated {len(memories_to_aggregate)} mid_term memories into long_term {new_id}")
+                    logger.info(
+                        f"Aggregated {len(memories_to_aggregate)} mid_term memories into long_term {new_id}"
+                    )
 
                 except Exception as e:
-                    logger.exception(f"Failed to insert/cleanup during aggregation for user {user_id}: {e}")
-                    _send_to_monitoring("error", f"aggregation insert/delete failed for user {user_id}", e)
+                    logger.exception(
+                        f"Failed to insert/cleanup during aggregation for user {user_id}: {e}"
+                    )
+                    _send_to_monitoring(
+                        "error",
+                        f"aggregation insert/delete failed for user {user_id}",
+                        e,
+                    )
                     # Do not delete source memories if insertion failed
 
             except Exception as e:
                 logger.exception(f"Failed to aggregate mid_term memories: {e}")
-                _send_to_monitoring("error", f"aggregation compression failed for user {user_id}", e)
+                _send_to_monitoring(
+                    "error", f"aggregation compression failed for user {user_id}", e
+                )
 
     except Exception as e:
         logger.exception(f"Error in move_memory_between_tiers for user {user_id}: {e}")
-        _send_to_monitoring("error", f"move_memory_between_tiers failed for user {user_id}", e)
+        _send_to_monitoring(
+            "error", f"move_memory_between_tiers failed for user {user_id}", e
+        )
 
     return moved
 
@@ -265,6 +343,7 @@ def move_memory_between_tiers(
 # ---------------------------
 # Retrieve Context
 # ---------------------------
+
 
 def _normalize_id(raw_id: Any) -> str:
     return str(raw_id)
@@ -286,10 +365,22 @@ def get_context(user_id: str, query: str, max_items: int = 5) -> List[Dict[str, 
     - Compute aggregate relevance (top-3 mean) to decide sufficiency
     - Always run vector search supplementary and merge results (concurrently to save time)
     - Normalize ids and handle duplicate ids across sources
+    - Cache results for improved performance
     """
     try:
-        # Sanitize query length
-        query = sanitize_content(query)
+        # Validate input parameters
+        validated_data = validate_query_input(user_id, query, max_items)
+        user_id = validated_data["user_id"]
+        query = validated_data["query"]
+        max_items = validated_data.get("limit", max_items)
+
+        # Check cache first
+        cache = get_cache_manager()
+        cache_key = f"{user_id}:{hash(query)}:{max_items}"
+        cached_result = cache.get("query_result", cache_key)
+        if cached_result is not None:
+            logger.debug(f"Cache hit for query: {query[:50]}...")
+            return cached_result
 
         db_result: List[Dict[str, Any]] = []
         vector_result: List[Dict[str, Any]] = []
@@ -302,18 +393,19 @@ def get_context(user_id: str, query: str, max_items: int = 5) -> List[Dict[str, 
             _send_to_monitoring("warning", f"DB retrieval failed for user {user_id}", e)
             db_result = []
 
-        # Run vector retrieval in separate thread to overlap IO
+        # Run vector retrieval using thread pool to prevent thread exhaustion
         def _run_vector():
-            nonlocal vector_result
             try:
-                vector_result = vector_db.query_embeddings(user_id, query, top_k=max_items)
+                return vector_db.query_embeddings(user_id, query, top_k=max_items)
             except Exception as e:
                 logger.exception(f"Vector retrieval failed for user {user_id}: {e}")
-                _send_to_monitoring("warning", f"vector retrieval failed for user {user_id}", e)
-                vector_result = []
+                _send_to_monitoring(
+                    "warning", f"vector retrieval failed for user {user_id}", e
+                )
+                return []
 
-        thread = threading.Thread(target=_run_vector)
-        thread.start()
+        # Submit vector retrieval to thread pool
+        vector_future = _vector_thread_pool.submit(_run_vector)
 
         # Evaluate DB sufficiency using aggregate scoring (top-3 mean)
         db_score = _aggregate_score(db_result, top_n=3)
@@ -323,11 +415,16 @@ def get_context(user_id: str, query: str, max_items: int = 5) -> List[Dict[str, 
             # If DB has at least 1-3 items and aggregate score is reasonably high, consider sufficient
             sufficient = True
 
-        # Wait for vector thread to finish but do not block long: join with timeout
-        thread.join(timeout=2.0)
-        if thread.is_alive():
-            # If still alive, we'll proceed with what we have; background worker will finish soon.
-            logger.debug("Vector retrieval taking long; proceeding with DB results and partial vector results")
+        # Wait for vector retrieval with timeout
+        try:
+            vector_result = vector_future.result(timeout=2.0)
+        except FutureTimeoutError:
+            # If timeout, we'll proceed with what we have; background worker will finish soon.
+            logger.debug("Vector retrieval taking long; proceeding with DB results")
+            vector_result = []
+        except Exception as e:
+            logger.exception(f"Vector retrieval failed for user {user_id}: {e}")
+            vector_result = []
 
         # If DB is sufficient, still augment with vector results but give DB preference
         combined: List[Dict[str, Any]] = []
@@ -360,7 +457,9 @@ def get_context(user_id: str, query: str, max_items: int = 5) -> List[Dict[str, 
         if not sufficient and len(combined) < min(max_items, 3):
             try:
                 remaining = max_items - len(combined)
-                more_vector = vector_db.query_embeddings(user_id, query, top_k=remaining)
+                more_vector = vector_db.query_embeddings(
+                    user_id, query, top_k=remaining
+                )
                 for item in more_vector:
                     if len(combined) >= max_items:
                         break
@@ -372,14 +471,23 @@ def get_context(user_id: str, query: str, max_items: int = 5) -> List[Dict[str, 
                     combined.append(item)
                     seen_ids.add(item_id)
             except Exception as e:
-                logger.exception(f"Blocking vector retrieval failed for user {user_id}: {e}")
-                _send_to_monitoring("warning", f"blocking vector retrieval failed for user {user_id}", e)
+                logger.exception(
+                    f"Blocking vector retrieval failed for user {user_id}: {e}"
+                )
+                _send_to_monitoring(
+                    "warning", f"blocking vector retrieval failed for user {user_id}", e
+                )
 
         # Sort combined by score descending (prefer higher relevance), but keep stable order for ties
         combined.sort(key=lambda x: float(x.get("score", 0.0)), reverse=True)
 
         # Final trim
-        return combined[:max_items]
+        result = combined[:max_items]
+
+        # Cache the result
+        cache.set("query_result", cache_key, result, ttl=900)  # 15 minutes
+
+        return result
 
     except Exception as e:
         logger.exception(f"Error retrieving context for user {user_id}: {e}")
@@ -391,6 +499,7 @@ def get_context(user_id: str, query: str, max_items: int = 5) -> List[Dict[str, 
 # Utility Functions
 # ---------------------------
 
+
 def get_memory_stats(user_id: str) -> Dict[str, int]:
     """Get memory statistics for a user. Handles per-tier errors individually."""
     stats = {"very_new": 0, "mid_term": 0, "long_term": 0}
@@ -399,8 +508,12 @@ def get_memory_stats(user_id: str) -> Dict[str, int]:
             memories = db.fetch_memories(user_id, tier, limit=None)
             stats[tier] = len(memories) if memories else 0
         except Exception as e:
-            logger.exception(f"Error fetching memories for tier {tier} for user {user_id}: {e}")
-            _send_to_monitoring("warning", f"fetch_memories failed for tier {tier} user {user_id}", e)
+            logger.exception(
+                f"Error fetching memories for tier {tier} for user {user_id}: {e}"
+            )
+            _send_to_monitoring(
+                "warning", f"fetch_memories failed for tier {tier} user {user_id}", e
+            )
             stats[tier] = 0
     return stats
 
@@ -413,11 +526,18 @@ def cleanup_old_memories(user_id: str, max_age_days: int = 365 * 2) -> int:
         return db.delete_old_memories(user_id, cutoff_date)
     except Exception as e:
         logger.exception(f"Error cleaning up old memories for user {user_id}: {e}")
-        _send_to_monitoring("error", f"cleanup_old_memories failed for user {user_id}", e)
+        _send_to_monitoring(
+            "error", f"cleanup_old_memories failed for user {user_id}", e
+        )
         return 0
 
 
 # Graceful shutdown helper for worker thread - call at application shutdown
 def shutdown_background_workers():
+    global _vector_thread_pool
     _stop_worker.set()
     _worker_thread.join(timeout=5)
+
+    # Shutdown thread pool gracefully
+    _vector_thread_pool.shutdown(wait=True, timeout=5.0)
+    logger.info("Background workers and thread pool stopped")

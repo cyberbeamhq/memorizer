@@ -1,0 +1,192 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memorizer-api
+  namespace: memorizer
+  labels:
+    app: memorizer-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: memorizer-api
+  template:
+    metadata:
+      labels:
+        app: memorizer-api
+    spec:
+      containers:
+      - name: api
+        image: memorizer:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: memorizer-config
+              key: DATABASE_URL
+        - name: CELERY_BROKER_URL
+          valueFrom:
+            configMapKeyRef:
+              name: memorizer-config
+              key: CELERY_BROKER_URL
+        - name: CELERY_RESULT_BACKEND
+          valueFrom:
+            configMapKeyRef:
+              name: memorizer-config
+              key: CELERY_RESULT_BACKEND
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: memorizer-config
+              key: ENVIRONMENT
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: memorizer-config
+              key: LOG_LEVEL
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: memorizer-secrets
+              key: jwt-secret-key
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: memorizer-secrets
+              key: openai-api-key
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memorizer-worker
+  namespace: memorizer
+  labels:
+    app: memorizer-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: memorizer-worker
+  template:
+    metadata:
+      labels:
+        app: memorizer-worker
+    spec:
+      containers:
+      - name: worker
+        image: memorizer:latest
+        command: ["celery", "-A", "src.celery_app", "worker", "--loglevel=info"]
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: memorizer-config
+              key: DATABASE_URL
+        - name: CELERY_BROKER_URL
+          valueFrom:
+            configMapKeyRef:
+              name: memorizer-config
+              key: CELERY_BROKER_URL
+        - name: CELERY_RESULT_BACKEND
+          valueFrom:
+            configMapKeyRef:
+              name: memorizer-config
+              key: CELERY_RESULT_BACKEND
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: memorizer-config
+              key: ENVIRONMENT
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: memorizer-config
+              key: LOG_LEVEL
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: memorizer-secrets
+              key: openai-api-key
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memorizer-beat
+  namespace: memorizer
+  labels:
+    app: memorizer-beat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: memorizer-beat
+  template:
+    metadata:
+      labels:
+        app: memorizer-beat
+    spec:
+      containers:
+      - name: beat
+        image: memorizer:latest
+        command: ["celery", "-A", "src.celery_app", "beat", "--loglevel=info"]
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: memorizer-config
+              key: DATABASE_URL
+        - name: CELERY_BROKER_URL
+          valueFrom:
+            configMapKeyRef:
+              name: memorizer-config
+              key: CELERY_BROKER_URL
+        - name: CELERY_RESULT_BACKEND
+          valueFrom:
+            configMapKeyRef:
+              name: memorizer-config
+              key: CELERY_RESULT_BACKEND
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: memorizer-config
+              key: ENVIRONMENT
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: memorizer-config
+              key: LOG_LEVEL
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"

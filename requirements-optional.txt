@@ -1,0 +1,58 @@
+# Optional vector database dependencies
+# Uncomment the ones you want to use:
+pinecone-client>=2.2.0
+weaviate-client>=3.0.0
+chromadb>=0.4.0
+pgvector>=0.2.0
+
+# Optional monitoring and logging dependencies
+structlog>=23.0.0
+elasticsearch>=8.0.0
+fluent-logger>=0.10.0
+loguru>=0.7.0
+
+# Optional async support
+aiofiles>=23.0.0
+aiohttp>=3.8.0
+aioredis>=2.0.0
+
+# Optional data processing
+pandas>=2.0.0
+scikit-learn>=1.3.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Optional web framework integrations
+flask>=2.3.0
+django>=4.2.0
+starlette>=0.27.0
+
+# Optional authentication providers
+authlib>=1.2.0
+python-jose>=3.3.0
+passlib>=1.7.4
+
+# Optional cloud providers
+boto3>=1.28.0
+google-cloud-storage>=2.10.0
+azure-storage-blob>=12.17.0
+
+# Optional message queues
+kafka-python>=2.0.0
+pika>=1.3.0
+celery[redis]>=5.3.0
+
+# Optional database drivers
+psycopg2>=2.9.0
+pymongo>=4.5.0
+sqlalchemy>=2.0.0
+
+# Optional AI/ML frameworks
+langchain>=0.0.300
+llama-index>=0.8.0
+autogpt>=0.4.0
+crewai>=0.1.0
+
+# Optional deployment tools
+gunicorn>=21.2.0
+supervisor>=4.2.0
