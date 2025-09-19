@@ -166,17 +166,17 @@ class GroqProvider(LLMProvider):
 
     def __init__(self, config: LLMConfig):
         try:
-            from groq import Groq
+            from groq import Groq  # type: ignore
         except ImportError:
             raise ImportError("Groq library not installed. Run: pip install groq")
 
         self.config = config
-        self.client = Groq(
-            api_key=config.api_key or os.getenv("GROQ_API_KEY")
-        )
+        api_key = config.api_key or os.getenv("GROQ_API_KEY")
         
-        if not self.client.api_key:
-            raise ValueError("Groq API key is required")
+        if not api_key:
+            raise ValueError("Groq API key is required. Set GROQ_API_KEY environment variable or pass api_key to config.")
+        
+        self.client = Groq(api_key=api_key)
 
     def generate(
         self, 
@@ -187,6 +187,10 @@ class GroqProvider(LLMProvider):
         **kwargs
     ) -> Optional[str]:
         """Generate text using Groq API."""
+        if not prompt or not prompt.strip():
+            logger.warning("Empty prompt provided to Groq provider")
+            return None
+            
         try:
             messages = []
             if system_prompt:
@@ -201,6 +205,10 @@ class GroqProvider(LLMProvider):
                 **kwargs
             )
             
+            if not response.choices:
+                logger.warning("No response choices returned from Groq")
+                return None
+                
             return response.choices[0].message.content
             
         except Exception as e:
@@ -456,22 +464,35 @@ class LLMProviderFactory:
         """Create an LLM provider based on configuration."""
         provider_name = config.provider.lower()
         
-        if provider_name == "openai":
-            return OpenAIProvider(config)
-        elif provider_name == "anthropic":
-            return AnthropicProvider(config)
-        elif provider_name == "groq":
-            return GroqProvider(config)
-        elif provider_name == "openrouter":
-            return OpenRouterProvider(config)
-        elif provider_name == "ollama":
-            return OllamaProvider(config)
-        elif provider_name == "custom":
-            return CustomProvider(config)
-        elif provider_name == "mock":
-            return MockProvider(config)
-        else:
-            raise ValueError(f"Unsupported LLM provider: {config.provider}")
+        # Validate provider
+        if provider_name not in LLMProviderFactory.get_available_providers():
+            raise ValueError(f"Unsupported LLM provider: {config.provider}. Available: {LLMProviderFactory.get_available_providers()}")
+        
+        # Validate model name for providers with known model lists
+        if provider_name in ["openai", "anthropic"]:
+            provider_info = LLMProviderFactory.get_provider_info(provider_name)
+            if config.model not in provider_info.get("models", []):
+                logger.warning(f"Model '{config.model}' may not be available for {provider_name}. Available: {provider_info.get('models', [])}")
+        
+        try:
+            if provider_name == "openai":
+                return OpenAIProvider(config)
+            elif provider_name == "anthropic":
+                return AnthropicProvider(config)
+            elif provider_name == "groq":
+                return GroqProvider(config)
+            elif provider_name == "openrouter":
+                return OpenRouterProvider(config)
+            elif provider_name == "ollama":
+                return OllamaProvider(config)
+            elif provider_name == "custom":
+                return CustomProvider(config)
+            elif provider_name == "mock":
+                return MockProvider(config)
+        except ImportError as e:
+            raise ImportError(f"Required library not installed for {provider_name}: {e}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to create {provider_name} provider: {e}")
 
     @staticmethod
     def get_available_providers() -> List[str]:
@@ -605,10 +626,10 @@ class LLMProviderFactory:
 def get_llm_provider_from_config() -> LLMProvider:
     """Get LLM provider from environment configuration."""
     provider = os.getenv("LLM_PROVIDER", "openai").lower()
-    model = os.getenv("LLM_MODEL", "gpt-4o-mini")
     
-    # Provider-specific configuration
+    # Provider-specific configuration with proper model names
     if provider == "openai":
+        model = os.getenv("OPENAI_MODEL", os.getenv("LLM_MODEL", "gpt-4o-mini"))
         config = LLMConfig(
             provider=provider,
             model=model,
@@ -616,18 +637,21 @@ def get_llm_provider_from_config() -> LLMProvider:
             base_url=os.getenv("OPENAI_BASE_URL")
         )
     elif provider == "anthropic":
+        model = os.getenv("ANTHROPIC_MODEL", os.getenv("LLM_MODEL", "claude-3-sonnet-20240229"))
         config = LLMConfig(
             provider=provider,
             model=model,
             api_key=os.getenv("ANTHROPIC_API_KEY")
         )
     elif provider == "groq":
+        model = os.getenv("GROQ_MODEL", os.getenv("LLM_MODEL", "llama3-8b-8192"))
         config = LLMConfig(
             provider=provider,
             model=model,
             api_key=os.getenv("GROQ_API_KEY")
         )
     elif provider == "openrouter":
+        model = os.getenv("OPENROUTER_MODEL", os.getenv("LLM_MODEL", "anthropic/claude-3-sonnet-20240229"))
         config = LLMConfig(
             provider=provider,
             model=model,
@@ -635,12 +659,14 @@ def get_llm_provider_from_config() -> LLMProvider:
             base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
         )
     elif provider == "ollama":
+        model = os.getenv("OLLAMA_MODEL", os.getenv("LLM_MODEL", "llama3:8b"))
         config = LLMConfig(
             provider=provider,
             model=model,
             base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         )
     elif provider == "custom":
+        model = os.getenv("CUSTOM_MODEL_NAME", os.getenv("LLM_MODEL", "custom-model"))
         config = LLMConfig(
             provider=provider,
             model=model,
@@ -649,6 +675,7 @@ def get_llm_provider_from_config() -> LLMProvider:
             headers=json.loads(os.getenv("CUSTOM_MODEL_HEADERS", "{}"))
         )
     elif provider == "mock":
+        model = os.getenv("LLM_MODEL", "mock-model")
         config = LLMConfig(
             provider=provider,
             model=model
@@ -755,3 +782,88 @@ def get_model_recommendations(use_case: str = "general") -> Dict[str, str]:
     }
     
     return recommendations.get(use_case, recommendations["general"])
+
+
+def validate_provider_config(provider: str, model: str, api_key: str = None) -> Dict[str, Any]:
+    """
+    Validate provider configuration and return validation results.
+    
+    Args:
+        provider: Provider name
+        model: Model name
+        api_key: API key (optional)
+        
+    Returns:
+        Dictionary with validation results
+    """
+    result = {
+        "valid": True,
+        "errors": [],
+        "warnings": [],
+        "provider_info": None
+    }
+    
+    # Check if provider is supported
+    if provider not in LLMProviderFactory.get_available_providers():
+        result["valid"] = False
+        result["errors"].append(f"Unsupported provider: {provider}")
+        return result
+    
+    # Get provider info
+    provider_info = LLMProviderFactory.get_provider_info(provider)
+    result["provider_info"] = provider_info
+    
+    # Check API key requirement
+    if provider_info.get("requires_api_key", False) and not api_key:
+        result["warnings"].append(f"API key recommended for {provider}")
+    
+    # Validate model name
+    if not validate_model_for_provider(provider, model):
+        if provider in ["groq", "openrouter", "ollama"]:
+            result["warnings"].append(f"Model '{model}' may not be available for {provider}")
+        else:
+            result["valid"] = False
+            result["errors"].append(f"Model '{model}' not available for {provider}")
+    
+    return result
+
+
+def get_provider_status(provider: str) -> Dict[str, Any]:
+    """
+    Get the current status and capabilities of a provider.
+    
+    Args:
+        provider: Provider name
+        
+    Returns:
+        Dictionary with provider status information
+    """
+    provider_info = LLMProviderFactory.get_provider_info(provider)
+    if not provider_info:
+        return {"error": f"Unknown provider: {provider}"}
+    
+    status = {
+        "provider": provider,
+        "name": provider_info["name"],
+        "description": provider_info["description"],
+        "model_format": provider_info["model_format"],
+        "requires_api_key": provider_info["requires_api_key"],
+        "supports_streaming": provider_info["supports_streaming"],
+        "available_models": len(provider_info["models"]),
+        "note": provider_info.get("note", ""),
+        "status": "available"
+    }
+    
+    # Check if required libraries are installed
+    try:
+        if provider == "openai":
+            import openai  # type: ignore
+        elif provider == "anthropic":
+            import anthropic  # type: ignore
+        elif provider == "groq":
+            import groq  # type: ignore
+    except ImportError:
+        status["status"] = "library_missing"
+        status["error"] = f"Required library not installed for {provider}"
+    
+    return status

@@ -13,12 +13,19 @@ from typing import Dict, Any
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from llm_providers import (
-    LLMProviderFactory, 
-    list_available_models, 
-    validate_model_for_provider,
-    get_model_recommendations
-)
+try:
+    from llm_providers import (
+        LLMProviderFactory, 
+        list_available_models, 
+        validate_model_for_provider,
+        get_model_recommendations,
+        validate_provider_config,
+        get_provider_status
+    )
+except ImportError as e:
+    print(f"❌ Failed to import llm_providers: {e}")
+    print("Make sure you're running this script from the project root directory")
+    sys.exit(1)
 
 
 def print_provider_info(provider_name: str):
@@ -89,7 +96,11 @@ def test_provider(provider_name: str, model_name: str = None):
         })
         
         # Create provider
-        from llm_providers import LLMConfig, LLMProviderFactory
+        try:
+            from llm_providers import LLMConfig, LLMProviderFactory
+        except ImportError as e:
+            print(f"❌ Failed to import LLMConfig: {e}")
+            return
         
         config = LLMConfig(
             provider=provider_name,
@@ -132,13 +143,66 @@ def validate_model(provider_name: str, model_name: str):
         print(f"   Use 'python llm_discovery.py list {provider_name}' to see available models")
 
 
+def validate_config(provider_name: str, model_name: str, api_key: str = None):
+    """Validate complete provider configuration."""
+    print(f"🔍 Validating {provider_name} configuration...")
+    
+    result = validate_provider_config(provider_name, model_name, api_key)
+    
+    if result["valid"]:
+        print(f"✅ Configuration is valid")
+    else:
+        print(f"❌ Configuration has errors:")
+        for error in result["errors"]:
+            print(f"   • {error}")
+    
+    if result["warnings"]:
+        print(f"⚠️ Warnings:")
+        for warning in result["warnings"]:
+            print(f"   • {warning}")
+    
+    if result["provider_info"]:
+        info = result["provider_info"]
+        print(f"\n📋 Provider Info:")
+        print(f"   Name: {info['name']}")
+        print(f"   Model Format: {info['model_format']}")
+        print(f"   Requires API Key: {'Yes' if info['requires_api_key'] else 'No'}")
+        print(f"   Supports Streaming: {'Yes' if info['supports_streaming'] else 'No'}")
+
+
+def check_status(provider_name: str):
+    """Check the status of a provider."""
+    print(f"🔍 Checking status of {provider_name}...")
+    
+    status = get_provider_status(provider_name)
+    
+    if "error" in status:
+        print(f"❌ {status['error']}")
+        return
+    
+    print(f"📊 Provider Status:")
+    print(f"   Name: {status['name']}")
+    print(f"   Status: {status['status']}")
+    print(f"   Available Models: {status['available_models']}")
+    print(f"   Model Format: {status['model_format']}")
+    print(f"   Requires API Key: {'Yes' if status['requires_api_key'] else 'No'}")
+    print(f"   Supports Streaming: {'Yes' if status['supports_streaming'] else 'No'}")
+    
+    if status.get("note"):
+        print(f"   Note: {status['note']}")
+    
+    if "error" in status:
+        print(f"   Error: {status['error']}")
+
+
 def main():
     """Main CLI function."""
     parser = argparse.ArgumentParser(description="LLM Discovery Utility")
-    parser.add_argument("command", choices=["list", "info", "recommend", "test", "validate"], 
+    parser.add_argument("command", choices=["list", "info", "recommend", "test", "validate", "validate-config", "status"], 
                        help="Command to execute")
     parser.add_argument("provider", nargs="?", help="Provider name")
     parser.add_argument("model", nargs="?", help="Model name")
+    parser.add_argument("--api-key", help="API key for validation")
     
     args = parser.parse_args()
     
@@ -168,6 +232,18 @@ def main():
             print("❌ Both provider and model names required for 'validate' command")
             return
         validate_model(args.provider, args.model)
+    
+    elif args.command == "validate-config":
+        if not args.provider or not args.model:
+            print("❌ Both provider and model names required for 'validate-config' command")
+            return
+        validate_config(args.provider, args.model, args.api_key)
+    
+    elif args.command == "status":
+        if not args.provider:
+            print("❌ Provider name required for 'status' command")
+            return
+        check_status(args.provider)
 
 
 if __name__ == "__main__":

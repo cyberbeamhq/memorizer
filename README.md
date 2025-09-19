@@ -313,7 +313,15 @@ Set your preferred provider and model in `.env`:
 ```bash
 # Primary LLM provider
 LLM_PROVIDER=openai
-LLM_MODEL=gpt-4o-mini
+LLM_MODEL=gpt-4o-mini  # Fallback model name
+
+# Provider-specific model names (takes precedence over LLM_MODEL)
+OPENAI_MODEL=gpt-4o-mini
+ANTHROPIC_MODEL=claude-3-sonnet-20240229
+GROQ_MODEL=llama3-8b-8192
+OPENROUTER_MODEL=anthropic/claude-3-sonnet-20240229
+OLLAMA_MODEL=llama3:8b
+CUSTOM_MODEL_NAME=your-model-name
 
 # Provider-specific settings
 OPENAI_API_KEY=your_openai_api_key
@@ -321,6 +329,41 @@ ANTHROPIC_API_KEY=your_anthropic_api_key
 GROQ_API_KEY=your_groq_api_key
 OPENROUTER_API_KEY=your_openrouter_api_key
 OLLAMA_BASE_URL=http://localhost:11434
+```
+
+### **Model Name Formats**
+
+Each provider requires specific model name formats:
+
+| Provider | Format | Example | Notes |
+|----------|--------|---------|-------|
+| **OpenAI** | `model_name` | `gpt-4o-mini` | Standard OpenAI model names |
+| **Anthropic** | `model_name` | `claude-3-sonnet-20240229` | Full Claude model names with version |
+| **Groq** | `exact_model_name` | `llama3-8b-8192` | Specific Groq model identifiers |
+| **OpenRouter** | `provider/model_name` | `anthropic/claude-3-sonnet-20240229` | Full path with provider prefix |
+| **Ollama** | `model_name:tag` | `llama3:8b` | Model name with optional tag |
+| **Custom** | `your_model_name` | `enterprise-model` | Your custom model identifier |
+
+### **How Model Names Are Passed**
+
+The framework uses a hierarchical approach for model names:
+
+1. **Provider-specific environment variable** (highest priority):
+   - `OPENAI_MODEL`, `GROQ_MODEL`, `OPENROUTER_MODEL`, etc.
+
+2. **Global fallback** (`LLM_MODEL`):
+   - Used if provider-specific variable is not set
+
+3. **Default model** (lowest priority):
+   - Hardcoded defaults for each provider
+
+```python
+# Example: How model names are resolved
+# If LLM_PROVIDER=groq and GROQ_MODEL=llama3-8b-8192
+# The framework will use "llama3-8b-8192" as the model name
+
+# If LLM_PROVIDER=openrouter and only LLM_MODEL=anthropic/claude-3-sonnet-20240229
+# The framework will use "anthropic/claude-3-sonnet-20240229" as the model name
 ```
 
 ---
