@@ -19,13 +19,14 @@ from .config import get_config_manager
 logger = logging.getLogger(__name__)
 
 # Get database configuration
+DATABASE_URL = None
 try:
     config_manager = get_config_manager()
     db_config = config_manager.get_database_config()
     DATABASE_URL = db_config.url
 except Exception as e:
-    logger.error(f"Failed to load database configuration: {e}")
-    raise
+    logger.warning(f"Failed to load database configuration: {e}")
+    # Don't raise here - let functions handle missing config gracefully
 
 # Connection pool for better performance and connection management
 _connection_pool = None
@@ -39,12 +40,28 @@ def init_connection_pool(
 ) -> None:
     """Initialize connection pool with improved configuration."""
     global _connection_pool
+
+    if DATABASE_URL is None:
+        logger.warning("DATABASE_URL not configured, cannot initialize connection pool")
+        return
+
     try:
         # Use configuration values if not provided
         if min_conn is None:
-            min_conn = db_config.min_connections
+            try:
+                config_manager = get_config_manager()
+                db_config = config_manager.get_database_config()
+                min_conn = db_config.min_connections
+            except:
+                min_conn = 1  # Default fallback
+
         if max_conn is None:
-            max_conn = db_config.max_connections
+            try:
+                config_manager = get_config_manager()
+                db_config = config_manager.get_database_config()
+                max_conn = db_config.max_connections
+            except:
+                max_conn = 10  # Default fallback
 
         # Enhanced connection pool configuration
         _connection_pool = SimpleConnectionPool(

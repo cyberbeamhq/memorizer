@@ -454,6 +454,7 @@ async def get_performance_metrics():
 async def get_prometheus_metrics():
     """Get Prometheus-formatted metrics."""
     from fastapi.responses import PlainTextResponse
+
     monitor = get_performance_monitor()
     metrics = monitor.get_prometheus_metrics()
     return PlainTextResponse(metrics, media_type="text/plain")

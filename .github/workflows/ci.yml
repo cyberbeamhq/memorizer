@@ -64,15 +64,33 @@ jobs:
         pip install chromadb>=0.4.0 || true
     
     - name: Lint with flake8
+      env:
+        JWT_SECRET_KEY: test-secret-key-for-testing-only-32-chars
+        EMBEDDING_PROVIDER: mock
+        VECTOR_DB_PROVIDER: mock
+        ENVIRONMENT: test
+        PYTHONPATH: ${{ github.workspace }}/src
       run: |
         flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics || true
         flake8 src/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics || true
     
     - name: Type check with mypy
+      env:
+        JWT_SECRET_KEY: test-secret-key-for-testing-only-32-chars
+        EMBEDDING_PROVIDER: mock
+        VECTOR_DB_PROVIDER: mock
+        ENVIRONMENT: test
+        PYTHONPATH: ${{ github.workspace }}/src
       run: |
         mypy src/ --ignore-missing-imports || true
     
     - name: Format check with black
+      env:
+        JWT_SECRET_KEY: test-secret-key-for-testing-only-32-chars
+        EMBEDDING_PROVIDER: mock
+        VECTOR_DB_PROVIDER: mock
+        ENVIRONMENT: test
+        PYTHONPATH: ${{ github.workspace }}/src
       run: |
         black --check src/ || true
     
@@ -81,6 +99,10 @@ jobs:
         DATABASE_URL: postgresql://postgres:postgres@localhost:5432/memorizer_test
         REDIS_URL: redis://localhost:6379/0
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        JWT_SECRET_KEY: test-secret-key-for-testing-only-32-chars
+        EMBEDDING_PROVIDER: mock
+        VECTOR_DB_PROVIDER: mock
+        ENVIRONMENT: test
         PYTHONPATH: ${{ github.workspace }}/src
       run: |
         # Run basic tests first
@@ -155,6 +177,10 @@ jobs:
         DATABASE_URL: postgresql://postgres:postgres@localhost:5432/memorizer_test
         REDIS_URL: redis://localhost:6379/0
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        JWT_SECRET_KEY: test-secret-key-for-testing-only-32-chars
+        EMBEDDING_PROVIDER: mock
+        VECTOR_DB_PROVIDER: mock
+        ENVIRONMENT: test
         PYTHONPATH: ${{ github.workspace }}/src
       run: |
         pytest tests/ -v -k "not integration" --tb=short || true

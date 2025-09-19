@@ -7,7 +7,7 @@ Provides type validation and runtime type checking capabilities.
 import inspect
 import logging
 from functools import wraps
-from typing import Any, Type, TypeVar, get_args, get_origin, get_type_hints
+from typing import Any, Type, TypeVar, Union, get_args, get_origin, get_type_hints
 
 logger = logging.getLogger(__name__)
 

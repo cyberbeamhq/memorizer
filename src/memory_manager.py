@@ -534,7 +534,7 @@ def cleanup_old_memories(user_id: str, max_age_days: int = 365 * 2) -> int:
 
 # Graceful shutdown helper for worker thread - call at application shutdown
 def shutdown_background_workers():
-    global _vector_thread_pool
+    global _vector_thread_pool  # noqa: F824
     _stop_worker.set()
     _worker_thread.join(timeout=5)
 
