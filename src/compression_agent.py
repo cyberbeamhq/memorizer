@@ -1,6 +1,6 @@
 """
 compression_agent.py
-Uses an LLM (default: OpenAI gpt-4o-mini) to compress or summarize content.
+Uses an LLM (supports multiple providers) to compress or summarize content.
 Includes safe parsing and retry logic with exponential backoff.
 """
 
@@ -8,10 +8,10 @@ import json
 import logging
 import os
 import time
-from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Union
 
 from dotenv import load_dotenv
+from .llm_providers import LLMProvider, LLMProviderFactory, get_llm_provider_from_config
 
 # Load environment variables
 load_dotenv()
@@ -19,503 +19,272 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------
-# Abstract LLM Provider Interface
-# ---------------------------
-class LLMProvider(ABC):
-    """Abstract base class for LLM providers."""
-
-    @abstractmethod
-    def generate(
-        self, prompt: str, system_prompt: str = None, **kwargs
-    ) -> Optional[str]:
-        """Generate text using the LLM."""
-        pass
-
-
-# ---------------------------
-# OpenAI Provider Implementation
-# ---------------------------
-class OpenAIProvider(LLMProvider):
-    """OpenAI implementation of LLM provider."""
-
-    def __init__(self, api_key: str = None, model: str = "gpt-4o-mini"):
-        try:
-            from openai import OpenAI
-        except ImportError:
-            raise ImportError("OpenAI library not installed. Run: pip install openai")
-
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        if not self.api_key:
-            raise ValueError(
-                "OpenAI API key not found. Set OPENAI_API_KEY environment variable."
-            )
-
-        self.model = model
-        self.client = OpenAI(api_key=self.api_key)
-        logger.info(f"OpenAI provider initialized with model: {model}")
-
-    def generate(
-        self, prompt: str, system_prompt: str = None, **kwargs
-    ) -> Optional[str]:
-        """Generate text using OpenAI API."""
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
-
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=kwargs.get("temperature", 0),
-                max_tokens=kwargs.get("max_tokens", 2000),
-                **{
-                    k: v
-                    for k, v in kwargs.items()
-                    if k not in ["temperature", "max_tokens"]
-                },
-            )
-            return response.choices[0].message.content.strip()
-        except Exception as e:
-            logger.error(f"OpenAI API call failed: {e}")
-            raise
-
-
-# ---------------------------
-# Mock Provider for Testing
-# ---------------------------
-class MockProvider(LLMProvider):
-    """Mock LLM provider for testing."""
-
-    def generate(
-        self, prompt: str, system_prompt: str = None, **kwargs
-    ) -> Optional[str]:
-        """Return mock JSON responses."""
-        if "mid-term" in prompt.lower():
-            return json.dumps(
-                {
-                    "summary": "Mock mid-term summary of user interaction",
-                    "metadata": {"compression_type": "mid_term", "mock": True},
-                }
-            )
-        else:
-            return json.dumps(
-                {
-                    "summary": "Mock long-term aggregated insights with preferences and sentiment",
-                    "metadata": {
-                        "compression_type": "long_term",
-                        "mock": True,
-                        "item_count": 5,
-                    },
-                }
-            )
-
-
-# ---------------------------
-# Compression Agent
-# ---------------------------
 class CompressionAgent:
-    """
-    Main compression agent that handles memory lifecycle compression.
-    Uses configurable LLM providers with retry logic and validation.
-    """
+    """Agent that compresses memories using LLM providers."""
 
-    def __init__(
+    def __init__(self, llm_provider: LLMProvider = None):
+        """Initialize the compression agent with an LLM provider."""
+        self.llm_provider = llm_provider or get_llm_provider_from_config()
+        logger.info(f"Compression agent initialized with {self.llm_provider.get_provider_name()}")
+
+    def compress_memory(
         self,
-        provider: LLMProvider = None,
+        content: str,
+        compression_type: str = "mid_term",
+        metadata: Dict[str, Any] = None,
         max_retries: int = 3,
-        base_delay: float = 1.0,
-    ):
+    ) -> Optional[Dict[str, Any]]:
         """
-        Initialize compression agent.
-
+        Compress memory content using the configured LLM provider.
+        
         Args:
-            provider: LLM provider instance
+            content: The content to compress
+            compression_type: Type of compression (mid_term, long_term)
+            metadata: Additional metadata for the memory
             max_retries: Maximum number of retry attempts
-            base_delay: Base delay for exponential backoff
-        """
-        self.provider = provider or self._get_default_provider()
-        self.max_retries = max_retries
-        self.base_delay = base_delay
-
-    def _get_default_provider(self) -> LLMProvider:
-        """Get default LLM provider based on available API keys."""
-        openai_key = os.getenv("OPENAI_API_KEY")
-
-        if openai_key:
-            return OpenAIProvider(api_key=openai_key)
-        else:
-            logger.warning("No LLM API keys found, using mock provider")
-            return MockProvider()
-
-    def _call_llm_with_retry(
-        self, prompt: str, system_prompt: str = None, **kwargs
-    ) -> Optional[str]:
-        """
-        Call LLM with exponential backoff retry logic.
-
-        Args:
-            prompt: User prompt
-            system_prompt: System prompt
-            **kwargs: Additional arguments for LLM
-
+            
         Returns:
-            LLM response or None if all retries failed
+            Dictionary containing compressed content and metadata
         """
-        for attempt in range(self.max_retries):
+        if not content or not content.strip():
+            logger.warning("Empty content provided for compression")
+            return None
+
+        metadata = metadata or {}
+        
+        # Create compression prompt based on type
+        if compression_type == "mid_term":
+            prompt = self._create_mid_term_compression_prompt(content)
+        elif compression_type == "long_term":
+            prompt = self._create_long_term_compression_prompt(content)
+        else:
+            prompt = self._create_general_compression_prompt(content)
+
+        system_prompt = self._get_compression_system_prompt(compression_type)
+
+        # Retry logic with exponential backoff
+        for attempt in range(max_retries):
             try:
-                response = self.provider.generate(prompt, system_prompt, **kwargs)
-                if response:
-                    return response
+                logger.debug(f"Compression attempt {attempt + 1}/{max_retries}")
+                
+                response = self.llm_provider.generate(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    temperature=0.3,  # Low temperature for consistent compression
+                    max_tokens=1000
+                )
+                
+                if not response:
+                    logger.warning(f"Empty response from LLM provider on attempt {attempt + 1}")
+                    continue
+
+                # Parse the response
+                compressed_data = self._parse_compression_response(response, compression_type)
+                
+                if compressed_data:
+                    logger.info(f"Successfully compressed content using {self.llm_provider.get_provider_name()}")
+                    return compressed_data
+                else:
+                    logger.warning(f"Failed to parse compression response on attempt {attempt + 1}")
 
             except Exception as e:
-                delay = self.base_delay * (2**attempt)  # Exponential backoff
-                logger.warning(
-                    f"LLM call failed (attempt {attempt + 1}/{self.max_retries}): {e}"
-                )
-
-                if attempt < self.max_retries - 1:
-                    logger.info(f"Retrying in {delay} seconds...")
-                    time.sleep(delay)
+                logger.error(f"Compression attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    # Exponential backoff
+                    wait_time = 2 ** attempt
+                    logger.info(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
                 else:
-                    logger.error("All retry attempts failed")
+                    logger.error(f"All {max_retries} compression attempts failed")
 
         return None
 
-    def _safe_json_parse(
-        self, text: str, fallback: Dict[str, Any] = None
-    ) -> Dict[str, Any]:
-        """
-        Parse JSON safely with comprehensive fallback handling.
-
-        Args:
-            text: Text to parse as JSON
-            fallback: Fallback dictionary if parsing fails
-
-        Returns:
-            Parsed JSON or fallback dictionary
-        """
-        if fallback is None:
-            fallback = {"summary": "Parsing failed", "metadata": {}}
-
-        if not text or not text.strip():
-            logger.warning("Empty response from LLM")
-            return fallback
-
-        # Try to extract JSON from response (handle cases where LLM adds extra text)
-        text = text.strip()
-
-        # Look for JSON block markers
-        json_start = text.find("{")
-        json_end = text.rfind("}") + 1
-
-        if json_start >= 0 and json_end > json_start:
-            json_text = text[json_start:json_end]
-        else:
-            json_text = text
-
-        try:
-            parsed = json.loads(json_text)
-
-            # Validate required fields
-            if not isinstance(parsed, dict):
-                raise ValueError("Response is not a dictionary")
-
-            if "summary" not in parsed:
-                parsed["summary"] = fallback.get("summary", "No summary available")
-
-            if "metadata" not in parsed:
-                parsed["metadata"] = {}
-
-            return parsed
-
-        except (json.JSONDecodeError, ValueError) as e:
-            logger.warning(f"JSON parsing failed: {e}. Raw response: {text[:100]}...")
-            return fallback
-
-    def _validate_compression_result(
-        self, result: Dict[str, Any], max_length: int = None
-    ) -> Dict[str, Any]:
-        """
-        Validate and sanitize compression results.
-
-        Args:
-            result: Compression result dictionary
-            max_length: Maximum allowed summary length
-
-        Returns:
-            Validated and sanitized result
-        """
-        # Ensure required fields exist
-        if "summary" not in result or not result["summary"]:
-            result["summary"] = "Summary unavailable"
-
-        if "metadata" not in result:
-            result["metadata"] = {}
-
-        # Truncate summary if too long
-        if max_length and len(result["summary"]) > max_length:
-            logger.warning(
-                f"Summary too long ({len(result['summary'])} chars), truncating to {max_length}"
-            )
-            result["summary"] = result["summary"][: max_length - 3] + "..."
-            result["metadata"]["truncated"] = True
-
-        # Add compression metadata
-        result["metadata"]["compressed_at"] = time.time()
-        result["metadata"]["compression_agent"] = "memorizer_v1"
-
-        return result
-
-    def compress_to_mid_term(
-        self, content: str, metadata: Dict[str, Any] = None
-    ) -> Dict[str, Any]:
-        """
-        Compress content into concise summary for mid_term storage.
-
-        Args:
-            content: Original content to compress
-            metadata: Original metadata to consider
-
-        Returns:
-            Dictionary with compressed summary and metadata
-        """
-        if not content or not content.strip():
-            logger.warning("Empty content provided for mid-term compression")
-            return {"summary": "Empty content", "metadata": {"error": "no_content"}}
-
-        # Prepare context from metadata
-        context_info = ""
-        if metadata:
-            context_info = f"Original metadata: {json.dumps(metadata, indent=2)}\n\n"
-
-        system_prompt = """You are a memory compression specialist. Your job is to create concise, informative summaries that preserve the most important information while reducing token usage.
-
-RULES:
-1. Output ONLY valid JSON with exactly these fields: {"summary": "...", "metadata": {...}}
-2. Keep summaries concise but informative
-3. Preserve key facts, actions, decisions, and outcomes
-4. Remove filler words and redundant information
-5. Include important context in metadata
-6. Maximum 500 characters for summary"""
-
-        user_prompt = f"""{context_info}Compress the following user interaction into a mid-term memory summary:
+    def _create_mid_term_compression_prompt(self, content: str) -> str:
+        """Create prompt for mid-term compression."""
+        return f"""
+Please compress the following conversation/interaction into a concise summary while preserving key information:
 
 CONTENT TO COMPRESS:
 {content}
 
-Remember: Output only JSON with summary and metadata fields."""
+COMPRESSION REQUIREMENTS:
+- Remove unnecessary words and filler content
+- Preserve user preferences, decisions, and important facts
+- Maintain context and relationships between topics
+- Keep the summary under 200 words
+- Focus on actionable insights and key takeaways
 
+Please respond with a JSON object containing:
+{{
+    "summary": "compressed summary text",
+    "key_points": ["point1", "point2", "point3"],
+    "user_preferences": {{"preference_type": "value"}},
+    "metadata": {{
+        "compression_type": "mid_term",
+        "original_length": {len(content)},
+        "compression_ratio": "calculated ratio"
+    }}
+}}
+"""
+
+    def _create_long_term_compression_prompt(self, content: str) -> str:
+        """Create prompt for long-term compression."""
+        return f"""
+Please create a highly aggregated brief from the following content, focusing on long-term insights and patterns:
+
+CONTENT TO AGGREGATE:
+{content}
+
+AGGREGATION REQUIREMENTS:
+- Extract key behavioral patterns and preferences
+- Identify sentiment and emotional context
+- Summarize into a brief under 1000 characters
+- Focus on actionable insights for future interactions
+- Preserve critical user information and preferences
+
+Please respond with a JSON object containing:
+{{
+    "brief": "highly compressed brief text",
+    "patterns": ["pattern1", "pattern2"],
+    "sentiment": "positive/negative/neutral",
+    "preferences": {{"category": "value"}},
+    "metadata": {{
+        "compression_type": "long_term",
+        "original_length": {len(content)},
+        "insights_count": "number of insights extracted"
+    }}
+}}
+"""
+
+    def _create_general_compression_prompt(self, content: str) -> str:
+        """Create prompt for general compression."""
+        return f"""
+Please compress the following content while preserving essential information:
+
+CONTENT TO COMPRESS:
+{content}
+
+Please respond with a JSON object containing:
+{{
+    "summary": "compressed summary",
+    "metadata": {{
+        "compression_type": "general",
+        "original_length": {len(content)}
+    }}
+}}
+"""
+
+    def _get_compression_system_prompt(self, compression_type: str) -> str:
+        """Get system prompt for compression."""
+        base_prompt = """You are an expert content compression agent. Your task is to compress text while preserving essential information, user preferences, and actionable insights. Always respond with valid JSON format."""
+        
+        if compression_type == "mid_term":
+            return base_prompt + " Focus on creating concise summaries that maintain context and relationships."
+        elif compression_type == "long_term":
+            return base_prompt + " Focus on extracting long-term patterns, preferences, and behavioral insights."
+        else:
+            return base_prompt
+
+    def _parse_compression_response(self, response: str, compression_type: str) -> Optional[Dict[str, Any]]:
+        """Parse and validate the compression response."""
         try:
-            raw_response = self._call_llm_with_retry(
-                user_prompt, system_prompt, max_tokens=800
-            )
-
-            if not raw_response:
-                logger.error("No response from LLM for mid-term compression")
-                return {
-                    "summary": content[:200] + "..." if len(content) > 200 else content,
-                    "metadata": {
-                        "error": "llm_failed",
-                        "original_length": len(content),
-                    },
-                }
-
-            result = self._safe_json_parse(
-                raw_response,
-                {
-                    "summary": content[:200] + "..." if len(content) > 200 else content,
-                    "metadata": {"error": "parse_failed"},
-                },
-            )
-
-            # Add original metadata to result
-            if metadata:
-                result["metadata"].update(metadata)
-
-            return self._validate_compression_result(result, max_length=500)
-
-        except Exception as e:
-            logger.error(f"Mid-term compression failed: {e}")
+            # Try to parse as JSON
+            parsed = json.loads(response)
+            
+            # Validate required fields
+            if "summary" not in parsed and "brief" not in parsed:
+                logger.warning("Response missing summary/brief field")
+                return None
+            
+            # Add compression metadata
+            if "metadata" not in parsed:
+                parsed["metadata"] = {}
+            
+            parsed["metadata"]["compression_timestamp"] = time.time()
+            parsed["metadata"]["llm_provider"] = self.llm_provider.get_provider_name()
+            parsed["metadata"]["llm_model"] = self.llm_provider.get_model_name()
+            
+            return parsed
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON response: {e}")
+            logger.debug(f"Raw response: {response}")
+            
+            # Fallback: create a simple summary
             return {
-                "summary": content[:200] + "..." if len(content) > 200 else content,
+                "summary": response[:500] + "..." if len(response) > 500 else response,
                 "metadata": {
-                    "error": "compression_failed",
-                    "original_length": len(content),
-                },
+                    "compression_type": compression_type,
+                    "compression_timestamp": time.time(),
+                    "llm_provider": self.llm_provider.get_provider_name(),
+                    "llm_model": self.llm_provider.get_model_name(),
+                    "parse_error": True
+                }
             }
+        
+        except Exception as e:
+            logger.error(f"Unexpected error parsing response: {e}")
+            return None
 
-    def compress_to_long_term(
-        self, content_list: List[str], metadata_list: List[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+    def batch_compress(
+        self, 
+        contents: List[str], 
+        compression_type: str = "mid_term",
+        batch_size: int = 5
+    ) -> List[Optional[Dict[str, Any]]]:
         """
-        Aggregate multiple mid-term items into a long-term insight.
-        Creates comprehensive user profile with sentiment, preferences, and patterns.
-
+        Compress multiple contents in batches.
+        
         Args:
-            content_list: List of mid-term content to aggregate
-            metadata_list: List of corresponding metadata
-
+            contents: List of content strings to compress
+            compression_type: Type of compression to apply
+            batch_size: Number of items to process in parallel
+            
         Returns:
-            Dictionary with aggregated insights (must be <1000 characters)
+            List of compression results (None for failed compressions)
         """
-        if not content_list:
-            logger.warning("Empty content list provided for long-term compression")
-            return {
-                "summary": "No content to aggregate",
-                "metadata": {"error": "no_content"},
-            }
+        results = []
+        
+        for i in range(0, len(contents), batch_size):
+            batch = contents[i:i + batch_size]
+            logger.info(f"Processing compression batch {i//batch_size + 1}")
+            
+            batch_results = []
+            for content in batch:
+                result = self.compress_memory(content, compression_type)
+                batch_results.append(result)
+            
+            results.extend(batch_results)
+            
+            # Small delay between batches to avoid rate limiting
+            if i + batch_size < len(contents):
+                time.sleep(1)
+        
+        return results
 
-        # Filter out empty content
-        valid_content = [c.strip() for c in content_list if c and c.strip()]
-        if not valid_content:
-            return {
-                "summary": "No valid content to aggregate",
-                "metadata": {"error": "no_valid_content"},
-            }
-
-        # Prepare metadata context
-        metadata_context = ""
-        if metadata_list:
-            metadata_context = f"Metadata context: {json.dumps(metadata_list[:5], indent=2)}\n\n"  # Limit to avoid token overflow
-
-        system_prompt = f"""You are an expert at creating comprehensive user profiles from interaction history. Create a long-term memory insight that captures:
-
-1. USER PATTERNS: Common behaviors, preferences, recurring themes
-2. SENTIMENT: Overall emotional tone and attitude changes
-3. KEY METRICS: Counts, frequencies, important statistics
-4. PREFERENCES: Clear likes/dislikes, preferred approaches
-5. INSIGHTS: What this tells us about the user
-
-CRITICAL REQUIREMENTS:
-- Output ONLY valid JSON: {{"summary": "...", "metadata": {{...}}}}
-- Summary must be under 950 characters total
-- Be concise but comprehensive
-- Focus on actionable insights
-- Include numerical data where relevant"""
-
-        content_summary = f"Aggregating {len(valid_content)} interactions:\n\n"
-        for i, content in enumerate(
-            valid_content[:10]
-        ):  # Limit to avoid token overflow
-            content_summary += (
-                f"{i+1}. {content[:200]}{'...' if len(content) > 200 else ''}\n"
-            )
-
-        user_prompt = f"""{metadata_context}{content_summary}
-
-Create a comprehensive long-term user profile from these interactions. Focus on patterns, preferences, sentiment, and actionable insights.
-
-Remember: Output only JSON with summary under 950 characters and relevant metadata."""
-
-        try:
-            raw_response = self._call_llm_with_retry(
-                user_prompt, system_prompt, max_tokens=1200
-            )
-
-            if not raw_response:
-                logger.error("No response from LLM for long-term compression")
-                return {
-                    "summary": f"Aggregated {len(valid_content)} interactions. Analysis unavailable.",
-                    "metadata": {
-                        "error": "llm_failed",
-                        "source_count": len(valid_content),
-                    },
-                }
-
-            result = self._safe_json_parse(
-                raw_response,
-                {
-                    "summary": f"Aggregated insights from {len(valid_content)} interactions.",
-                    "metadata": {"error": "parse_failed"},
-                },
-            )
-
-            # Add aggregation metadata
-            result["metadata"].update(
-                {
-                    "source_count": len(valid_content),
-                    "aggregated_from": "mid_term",
-                    "total_original_length": sum(len(c) for c in valid_content),
-                }
-            )
-
-            return self._validate_compression_result(result, max_length=950)
-
-        except Exception as e:
-            logger.error(f"Long-term compression failed: {e}")
-            return {
-                "summary": f"Aggregated {len(valid_content)} interactions. Compression failed: {str(e)[:100]}",
-                "metadata": {
-                    "error": "compression_failed",
-                    "source_count": len(valid_content),
-                },
-            }
+    def get_compression_stats(self) -> Dict[str, Any]:
+        """Get statistics about the compression agent."""
+        return {
+            "provider": self.llm_provider.get_provider_name(),
+            "model": self.llm_provider.get_model_name(),
+            "timestamp": time.time()
+        }
 
 
-# ---------------------------
-# Global Instance and Convenience Functions
-# ---------------------------
-_default_agent = None
+# Global compression agent instance
+_compression_agent = None
 
 
 def get_compression_agent() -> CompressionAgent:
-    """Get or create the default compression agent instance."""
-    global _default_agent
-    if _default_agent is None:
-        _default_agent = CompressionAgent()
-    return _default_agent
+    """Get the global compression agent instance."""
+    global _compression_agent
+    if _compression_agent is None:
+        _compression_agent = CompressionAgent()
+    return _compression_agent
 
 
-def compress_to_mid_term(
-    content: str, metadata: Dict[str, Any] = None
-) -> Dict[str, Any]:
-    """Convenience function for mid-term compression."""
-    return get_compression_agent().compress_to_mid_term(content, metadata)
-
-
-def compress_to_long_term(
-    content_list: List[str], metadata_list: List[Dict[str, Any]] = None
-) -> Dict[str, Any]:
-    """Convenience function for long-term compression."""
-    return get_compression_agent().compress_to_long_term(content_list, metadata_list)
-
-
-# ---------------------------
-# Configuration and Testing
-# ---------------------------
-def configure_agent(provider: LLMProvider = None, **kwargs) -> CompressionAgent:
-    """Configure and return a new compression agent."""
-    global _default_agent
-    _default_agent = CompressionAgent(provider=provider, **kwargs)
-    return _default_agent
-
-
-def test_compression_agent():
-    """Test the compression agent with sample data."""
-    agent = get_compression_agent()
-
-    # Test mid-term compression
-    sample_content = "User asked about refund policy for their recent order #12345. Explained the 30-day return policy and provided instructions for initiating a return. User seemed satisfied with the response and thanked support."
-
-    print("Testing mid-term compression...")
-    mid_result = agent.compress_to_mid_term(sample_content)
-    print(f"Mid-term result: {json.dumps(mid_result, indent=2)}")
-
-    # Test long-term compression
-    sample_contents = [
-        "User inquired about shipping delays, expressed frustration",
-        "User placed order for premium product, happy with fast checkout",
-        "User contacted support about product defect, requested replacement",
-        "User left positive review, mentioned excellent customer service",
-        "User asked about bulk discounts for business account",
-    ]
-
-    print("\nTesting long-term compression...")
-    long_result = agent.compress_to_long_term(sample_contents)
-    print(f"Long-term result: {json.dumps(long_result, indent=2)}")
-
-
-if __name__ == "__main__":
-    test_compression_agent()
+def initialize_compression_agent(llm_provider: LLMProvider = None) -> CompressionAgent:
+    """Initialize the global compression agent with a specific provider."""
+    global _compression_agent
+    _compression_agent = CompressionAgent(llm_provider)
+    return _compression_agent

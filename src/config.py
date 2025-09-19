@@ -56,6 +56,20 @@ class VectorDBConfig:
 
 
 @dataclass
+class LLMConfig:
+    """LLM configuration for compression and generation."""
+
+    provider: str
+    model: str
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    max_retries: int = 3
+    timeout: int = 30
+    temperature: float = 0.7
+    max_tokens: Optional[int] = None
+
+
+@dataclass
 class AppConfig:
     """Application configuration."""
 
@@ -107,6 +121,12 @@ class ConfigValidator:
         return provider.lower() in valid_providers
 
     @staticmethod
+    def validate_llm_provider(provider: str) -> bool:
+        """Validate LLM provider."""
+        valid_providers = ["openai", "anthropic", "groq", "openrouter", "ollama", "custom", "mock"]
+        return provider.lower() in valid_providers
+
+    @staticmethod
     def validate_vector_db_provider(provider: str) -> bool:
         """Validate vector database provider."""
         valid_providers = ["mock", "pinecone", "weaviate", "chroma", "pgvector"]
@@ -140,6 +160,7 @@ class ConfigManager:
             "security": self._load_security_config(),
             "embedding": self._load_embedding_config(),
             "vector_db": self._load_vector_db_config(),
+            "llm": self._load_llm_config(),
             "app": self._load_app_config(),
         }
 
@@ -263,6 +284,52 @@ class ConfigManager:
             provider=provider, api_key=api_key, url=url, index_name=index_name
         )
 
+    def _load_llm_config(self) -> LLMConfig:
+        """Load LLM configuration."""
+        provider = os.getenv("LLM_PROVIDER", "openai").lower()
+        model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+
+        if not ConfigValidator.validate_llm_provider(provider):
+            raise ValueError(f"Invalid LLM provider: {provider}")
+
+        # Get provider-specific settings
+        if provider == "openai":
+            api_key = os.getenv("OPENAI_API_KEY")
+            base_url = os.getenv("OPENAI_BASE_URL")
+        elif provider == "anthropic":
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            base_url = None
+        elif provider == "groq":
+            api_key = os.getenv("GROQ_API_KEY")
+            base_url = None
+        elif provider == "openrouter":
+            api_key = os.getenv("OPENROUTER_API_KEY")
+            base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+        elif provider == "ollama":
+            api_key = None
+            base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        elif provider == "custom":
+            api_key = os.getenv("CUSTOM_MODEL_API_KEY")
+            base_url = os.getenv("CUSTOM_MODEL_BASE_URL")
+        else:  # mock
+            api_key = None
+            base_url = None
+
+        # Validate API key for providers that require it
+        if provider in ["openai", "anthropic", "groq", "openrouter", "custom"] and not api_key:
+            logger.warning(f"API key not provided for {provider} LLM provider")
+
+        return LLMConfig(
+            provider=provider,
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            max_retries=int(os.getenv("LLM_MAX_RETRIES", "3")),
+            timeout=int(os.getenv("LLM_TIMEOUT", "30")),
+            temperature=float(os.getenv("LLM_TEMPERATURE", "0.7")),
+            max_tokens=int(os.getenv("LLM_MAX_TOKENS", "1000")) if os.getenv("LLM_MAX_TOKENS") else None,
+        )
+
     def _load_app_config(self) -> AppConfig:
         """Load application configuration."""
         environment = os.getenv("ENVIRONMENT", "development").lower()
@@ -297,6 +364,10 @@ class ConfigManager:
     def get_vector_db_config(self) -> VectorDBConfig:
         """Get vector database configuration."""
         return self.config["vector_db"]
+
+    def get_llm_config(self) -> LLMConfig:
+        """Get LLM configuration."""
+        return self.config["llm"]
 
     def get_app_config(self) -> AppConfig:
         """Get application configuration."""

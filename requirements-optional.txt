@@ -5,6 +5,13 @@ weaviate-client>=3.0.0
 chromadb>=0.4.0
 pgvector>=0.2.0
 
+# Optional LLM providers (for advanced use cases)
+# Uncomment the ones you want to use:
+anthropic>=0.7.0
+groq>=0.4.0
+openai>=1.0.0  # For OpenRouter compatibility
+requests>=2.31.0  # For custom models
+
 # Optional monitoring and logging dependencies
 structlog>=23.0.0
 elasticsearch>=8.0.0

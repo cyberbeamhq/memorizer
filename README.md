@@ -197,7 +197,7 @@ Aggregated Brief (Long-term)
 ### **Key Features**
 
 - **🎯 Smart Compression**: Reduces content by 60-80% while preserving meaning
-- **🧠 LLM-Powered**: Uses OpenAI `gpt-4o-mini` for intelligent summarization
+- **🧠 Multi-LLM Support**: Supports OpenAI, Anthropic, Groq, OpenRouter, Ollama, and custom models
 - **⚡ Background Processing**: Non-blocking compression via Celery workers
 - **🔄 Configurable**: Customizable compression policies and thresholds
 - **📊 Analytics**: Tracks compression effectiveness and quality metrics
@@ -239,6 +239,89 @@ premium brands. Recommended Dell XPS 13 and ThinkPad X1 Carbon. Budget-conscious
 - **🧠 Memory Efficiency**: More memories stored in same space
 - **📈 Scalability**: Better performance at scale
 - **🎯 Relevance**: Preserves important information while removing noise
+
+---
+
+## 🤖 LLM Providers
+
+### **Supported Providers**
+
+Memorizer supports multiple LLM providers for maximum flexibility and cost optimization:
+
+| Provider | Description | Best For | Models |
+|----------|-------------|----------|---------|
+| **OpenAI** | GPT models | General use, high quality | `gpt-4o-mini`, `gpt-4o`, `gpt-3.5-turbo` |
+| **Anthropic** | Claude models | Complex reasoning, long context | `claude-3-sonnet`, `claude-3-opus`, `claude-3-haiku` |
+| **Groq** | Fast inference | Speed-critical applications | `llama3-8b-8192`, `mixtral-8x7b-32768` |
+| **OpenRouter** | Multiple models | Cost optimization, model variety | `anthropic/claude-3-sonnet`, `openai/gpt-4o-mini` |
+| **Ollama** | Local models | Privacy, offline use | `llama3:8b`, `mistral:7b`, `codellama:7b` |
+| **Custom** | Enterprise APIs | Private models, custom endpoints | Any OpenAI-compatible API |
+
+### **Model Recommendations by Use Case**
+
+```bash
+# General purpose (balanced quality/speed/cost)
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-4o-mini
+
+# Fast inference (speed priority)
+LLM_PROVIDER=groq
+LLM_MODEL=llama3-8b-8192
+
+# Cost optimization (cheap models)
+LLM_PROVIDER=openrouter
+LLM_MODEL=openai/gpt-3.5-turbo
+
+# High quality (best results)
+LLM_PROVIDER=anthropic
+LLM_MODEL=claude-3-opus-20240229
+
+# Local deployment (privacy)
+LLM_PROVIDER=ollama
+LLM_MODEL=llama3:8b
+
+# Coding tasks
+LLM_PROVIDER=groq
+LLM_MODEL=deepseek-coder-6.7b-instruct
+```
+
+### **Discovery Utility**
+
+Use the built-in discovery utility to explore available models:
+
+```bash
+# List all providers
+python scripts/llm_discovery.py list
+
+# Get detailed info about a provider
+python scripts/llm_discovery.py info groq
+
+# See model recommendations
+python scripts/llm_discovery.py recommend
+
+# Test a provider
+python scripts/llm_discovery.py test mock
+
+# Validate a model
+python scripts/llm_discovery.py validate groq llama3-8b-8192
+```
+
+### **Configuration**
+
+Set your preferred provider and model in `.env`:
+
+```bash
+# Primary LLM provider
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-4o-mini
+
+# Provider-specific settings
+OPENAI_API_KEY=your_openai_api_key
+ANTHROPIC_API_KEY=your_anthropic_api_key
+GROQ_API_KEY=your_groq_api_key
+OPENROUTER_API_KEY=your_openrouter_api_key
+OLLAMA_BASE_URL=http://localhost:11434
+```
 
 ---
 
@@ -351,7 +434,7 @@ When the customer chats again:
 - **Background Jobs**: Celery with Redis broker
 
 ### **AI & ML**
-- **LLM Providers**: OpenAI (gpt-4o-mini), Cohere, HuggingFace, local models
+- **LLM Providers**: OpenAI, Anthropic, Groq, OpenRouter, Ollama, Custom APIs
 - **Vector Databases**: Pinecone, Weaviate, Chroma, pgvector
 - **Embedding Providers**: OpenAI, Cohere, HuggingFace, sentence-transformers
 - **AI Frameworks**: LangChain, LlamaIndex, AutoGPT, CrewAI
@@ -379,6 +462,7 @@ memorizer/
 │   ├── memory_manager.py         # Memory lifecycle orchestration
 │   ├── db.py                     # Database schema & queries
 │   ├── compression_agent.py      # LLM-powered summarization
+│   ├── llm_providers.py          # Multi-provider LLM support
 │   ├── retrieval.py              # Hybrid context retrieval
 │   ├── vector_db.py              # Vector database abstraction
 │   ├── embeddings.py             # Embedding providers
@@ -408,7 +492,8 @@ memorizer/
 │   └── agent_memory_example.py   # Comprehensive example
 ├── scripts/                      # Database & deployment scripts
 │   ├── init_db.py               # Database initialization
-│   └── migrate.py               # Database migrations
+│   ├── migrate.py               # Database migrations
+│   └── llm_discovery.py         # LLM provider discovery utility
 ├── k8s/                         # Kubernetes manifests
 │   ├── deployment.yaml          # K8s deployment
 │   ├── configmap.yaml           # Configuration
