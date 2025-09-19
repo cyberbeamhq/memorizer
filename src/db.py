@@ -16,6 +16,8 @@ from psycopg2.pool import SimpleConnectionPool
 # Import configuration manager
 from .config import get_config_manager
 
+logger = logging.getLogger(__name__)
+
 # Get database configuration
 try:
     config_manager = get_config_manager()
@@ -24,8 +26,6 @@ try:
 except Exception as e:
     logger.error(f"Failed to load database configuration: {e}")
     raise
-
-logger = logging.getLogger(__name__)
 
 # Connection pool for better performance and connection management
 _connection_pool = None
