@@ -1,6 +1,6 @@
 # Memorizer
 
-[![Build](https://img.shields.io/github/actions/workflow/status/cyberbeamhq/memorizer/ci.yml?branch=main)](https://github.com/cyberbeamhq/memorizer/actions)
+[![Build](https://img.shields.io/github/actions/workflow/status/cyberbeamhq/memorizer/ci-cd.yml?branch=main)](https://github.com/cyberbeamhq/memorizer/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
 [![OpenAI](https://img.shields.io/badge/LLM-OpenAI%20gpt--4o--mini-green)](https://platform.openai.com/)
