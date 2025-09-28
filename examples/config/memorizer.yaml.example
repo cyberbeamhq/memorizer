@@ -1,0 +1,190 @@
+# Memorizer Framework Configuration Example
+# Copy this file to memorizer.yaml and customize for your needs
+
+framework:
+  version: "1.0.0"
+  debug: false
+  log_level: "INFO"
+
+# Core Components Configuration
+summarizer:
+  type: "summarizer"
+  name: "openai"
+  enabled: true
+  config:
+    model: "gpt-4o-mini"
+    api_key: "${OPENAI_API_KEY}"
+    temperature: 0.3
+    max_retries: 3
+    timeout: 30
+
+retriever:
+  type: "retriever"
+  name: "hybrid"
+  enabled: true
+  config:
+    keyword_weight: 0.4
+    vector_weight: 0.6
+    fallback_threshold: 0.3
+
+storage:
+  type: "storage"
+  name: "postgres"  # Options: postgres, supabase, railway, neon, planetscale, cockroachdb
+  enabled: true
+  config:
+    connection: "${DATABASE_URL}"
+    pool_size: 10
+    max_overflow: 20
+
+    # External provider configurations (optional)
+    # Supabase configuration
+    supabase:
+      project_url: "${SUPABASE_URL}"
+      anon_key: "${SUPABASE_ANON_KEY}"
+      service_role_key: "${SUPABASE_SERVICE_ROLE_KEY}"
+      database_password: "${SUPABASE_DB_PASSWORD}"
+
+    # Railway configuration
+    railway:
+      database_url: "${RAILWAY_DATABASE_URL}"
+      # Or individual components:
+      database_host: "${RAILWAY_PGHOST}"
+      database_port: "${RAILWAY_PGPORT}"
+      database_user: "${RAILWAY_PGUSER}"
+      database_password: "${RAILWAY_PGPASSWORD}"
+      database_name: "${RAILWAY_PGDATABASE}"
+
+    # Neon configuration
+    neon:
+      connection_string: "${NEON_DATABASE_URL}"
+      host: "${NEON_HOST}"
+      database: "${NEON_DATABASE}"
+      username: "${NEON_USERNAME}"
+      password: "${NEON_PASSWORD}"
+
+    # PlanetScale configuration (MySQL)
+    planetscale:
+      host: "${PLANETSCALE_HOST}"
+      username: "${PLANETSCALE_USERNAME}"
+      password: "${PLANETSCALE_PASSWORD}"
+      database: "${PLANETSCALE_DATABASE}"
+
+    # CockroachDB configuration
+    cockroachdb:
+      connection_string: "${COCKROACH_DATABASE_URL}"
+      host: "${COCKROACH_HOST}"
+      port: "${COCKROACH_PORT}"
+      database: "${COCKROACH_DATABASE}"
+      username: "${COCKROACH_USERNAME}"
+      password: "${COCKROACH_PASSWORD}"
+
+pii_filter:
+  type: "pii_filter"
+  name: "memorizer_builtin"
+  enabled: true
+  config:
+    mode: "mask"
+    enable_detection: true
+
+scorer:
+  type: "scorer"
+  name: "tfidf"
+  enabled: true
+  config:
+    max_features: 1000
+    min_df: 2
+
+task_runner:
+  type: "task_runner"
+  name: "celery"
+  enabled: true
+  config:
+    broker: "${CELERY_BROKER_URL}"
+    backend: "${CELERY_RESULT_BACKEND}"
+    concurrency: 4
+
+embedding_provider:
+  type: "embedding_provider"
+  name: "openai"
+  enabled: true
+  config:
+    model: "text-embedding-ada-002"
+    api_key: "${OPENAI_API_KEY}"
+    batch_size: 100
+
+vector_store:
+  type: "vector_store"
+  name: "memory"  # Options: memory, sqlite, pinecone, weaviate, chroma, postgresql
+  enabled: true
+  config:
+    # Memory vector store (default for development)
+    # No additional config needed
+
+    # SQLite vector store
+    sqlite:
+      db_path: "vectors.db"
+
+    # Pinecone configuration
+    pinecone:
+      api_key: "${PINECONE_API_KEY}"
+      environment: "${PINECONE_ENVIRONMENT}"
+      index_name: "memorizer"
+
+    # Weaviate configuration
+    weaviate:
+      url: "${WEAVIATE_URL}"
+      api_key: "${WEAVIATE_API_KEY}"
+      class_name: "MemorizerMemory"
+
+    # Chroma configuration
+    chroma:
+      persist_directory: "./chroma_db"
+      collection_name: "memorizer_memories"
+
+    # PostgreSQL with pgvector
+    postgresql:
+      connection_string: "${VECTOR_DATABASE_URL}"
+      table_name: "embeddings"
+
+cache:
+  type: "cache"
+  name: "redis"
+  enabled: true
+  config:
+    connection: "${REDIS_URL}"
+    ttl: 3600
+    max_connections: 10
+
+# Memory Lifecycle Configuration
+memory_lifecycle:
+  tiers:
+    very_new:
+      ttl_days: 7
+      max_items: 1000
+      max_content_length: 1000
+    mid_term:
+      ttl_days: 30
+      max_items: 5000
+      max_content_length: 5000
+    long_term:
+      ttl_days: 365
+      max_items: 10000
+      max_content_length: 10000
+  compression_threshold: 0.8
+  cleanup_interval: 3600
+
+# Security Configuration
+security:
+  enable_pii_detection: true
+  enable_tls_enforcement: true
+  enable_secret_rotation: true
+  pii_redaction_mode: "mask"
+  max_failed_attempts: 5
+  lockout_duration: 900
+
+# Performance Configuration
+performance:
+  cache_ttl: 3600
+  batch_size: 100
+  max_workers: 4
+  connection_pool_size: 10

@@ -1,663 +1,328 @@
-# Memorizer
+# Memorizer - Intelligent Memory Management Library
 
-[![Build](https://img.shields.io/github/actions/workflow/status/cyberbeamhq/memorizer/ci-cd.yml?branch=main)](https://github.com/cyberbeamhq/memorizer/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
-[![OpenAI](https://img.shields.io/badge/LLM-OpenAI%20gpt--4o--mini-green)](https://platform.openai.com/)
-[![Production Ready](https://img.shields.io/badge/status-Production%20Ready-green)](https://docs.memorizer.dev)
 
-**Memorizer** is a production-ready, open-source memory lifecycle framework for AI assistants and agents.  
-It helps LLM-based systems **forget smartly, remember what matters, and reduce token usage** while keeping historical context accessible.
+**A focused Python library for adding intelligent memory capabilities to AI applications.**
 
-> 📚 **For detailed documentation, API reference, and advanced usage examples, visit our [Documentation Website](https://docs.memorizer.dev)**
+Memorizer provides memory storage, retrieval, lifecycle management, and external provider integrations without the complexity of application infrastructure.
 
----
+## 🎯 Core Focus
+
+**Pure Memory Management** - No web servers, no containers, no infrastructure complexity. Just intelligent memory for your AI applications.
 
 ## ✨ Key Features
 
-### 🧠 **Intelligent Memory Management**
-- **Three-tier memory lifecycle**
-  - **Very new** → recent sessions (raw, full text, up to 10 days / N sessions)
-  - **Mid-term** → compressed summaries with unnecessary words removed (last 12 months)
-  - **Long-term** → highly aggregated, <1000-character briefs with sentiment, preferences, and key metrics
-- **Smart compression** with LLM-powered summarization (OpenAI `gpt-4o-mini` by default)
-- **Hybrid retrieval** combining keyword relevance scoring with vector DB fallback
+- **🧠 Intelligent Memory Lifecycle**: Three-tier aging system (very_new → mid_term → long_term)
+- **🔍 Hybrid Search**: Combines keyword and vector search for optimal retrieval
+- **🤖 LLM Integration**: Works with OpenAI, Anthropic, Groq, and custom providers
+- **🗄️ External Providers**: Easy integration with Supabase, Railway, Neon, Pinecone, Weaviate
+- **🛡️ PII Protection**: Built-in personally identifiable information filtering
+- **⚡ Simple API**: Get started in 3 lines of code
 
-### 🏗️ **Production-Ready Infrastructure**
-- **DB-first design** with PostgreSQL + JSONB for structured queries and analytics
-- **RESTful API** with FastAPI, authentication, rate limiting, and comprehensive error handling
-- **Background job processing** with Celery for embedding generation and memory compression
-- **Redis caching** with LRU eviction and TTL for optimal performance
-- **Docker support** with development and production configurations
-- **Kubernetes ready** with Helm charts and deployment manifests
+## 🚀 Quick Start
 
-### 🔌 **Extensive Integrations**
-- **Vector databases**: Pinecone, Weaviate, Chroma, pgvector
-- **AI frameworks**: LangChain, LlamaIndex, AutoGPT, CrewAI
-- **Embedding providers**: OpenAI, Cohere, HuggingFace, local models
-- **Cloud providers**: AWS, Azure, Google Cloud
-- **Monitoring**: Prometheus, Grafana, Sentry integration
+### Installation
 
-### 🛡️ **Enterprise Security & Compliance**
-- **Authentication & Authorization** with JWT and API keys
-- **Role-based access control (RBAC)** with granular permissions
-- **Input validation & sanitization** with XSS and SQL injection protection
-- **Audit logging** for compliance and security monitoring
-- **Rate limiting** with sliding window algorithm
-- **Comprehensive error handling** with structured logging
+```bash
+pip install memorizer
 
-### 📊 **Monitoring & Observability**
-- **Structured logging** with request tracing and correlation IDs
-- **Performance monitoring** with Prometheus metrics
-- **Health checks** for all system components
-- **Automated testing** with comprehensive test suites
-- **Real-time dashboards** for system monitoring
+# Optional: Install external provider dependencies
+pip install pinecone-client weaviate-client supabase
+```
 
----
+### Basic Usage
+
+```python
+import memorizer
+
+# Create a memory manager
+memory = memorizer.create_memory()
+
+# Store memories
+user_id = "user123"
+memory_id = memory.store_memory(user_id, "I love playing guitar")
+
+# Search memories
+results = memory.search_memories(user_id, "music hobbies")
+print(f"Found {len(results.memories)} relevant memories")
+```
+
+### With External Providers
+
+```python
+import memorizer
+
+# Use Supabase for storage and Pinecone for vectors
+memory = memorizer.create_memory_manager(
+    storage_provider="supabase",
+    vector_store="pinecone",
+    llm_provider="openai",
+    supabase_url="https://your-project.supabase.co",
+    supabase_password="your-password",
+    pinecone_api_key="your-api-key"
+)
+
+# Same API
+memory.store_memory("user123", "Working on a React project")
+results = memory.search_memories("user123", "frontend development")
+```
 
 ## 🏗️ Architecture
 
+### Memory Lifecycle
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Memorizer Framework                      │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │
-│  │ Very New    │  │ Mid-Term    │  │ Long-Term   │            │
-│  │ Memory      │  │ Memory      │  │ Memory      │            │
-│  │ (Raw, 10d)  │  │ (Summary,   │  │ (Brief,     │            │
-│  │             │  │ 12 months)  │  │ <1k chars)  │            │
-│  └─────┬───────┘  └─────┬───────┘  └─────┬───────┘            │
-│        │ move/compress   │ aggregate      │ fallback          │
-│        ▼                ▼                ▼                   │
-│  ┌─────────────────────────────────────────────────────────┐  │
-│  │              PostgreSQL + JSONB                        │  │
-│  │         (Structured queries & analytics)               │  │
-│  └─────────────────────┬───────────────────────────────────┘  │
-│                        │                                      │
-│  ┌─────────────────────▼───────────────────────────────────┐  │
-│  │              Vector DB (Optional)                      │  │
-│  │    (Pinecone / Weaviate / Chroma / pgvector)          │  │
-│  └─────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Production Infrastructure                     │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │
-│  │ FastAPI     │  │ Celery      │  │ Redis       │            │
-│  │ (REST API)  │  │ (Background │  │ (Caching &  │            │
-│  │             │  │ Jobs)       │  │ Queues)     │            │
-│  └─────────────┘  └─────────────┘  └─────────────┘            │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │
-│  │ Auth &      │  │ Monitoring  │  │ Docker &    │            │
-│  │ Security    │  │ (Prometheus │  │ Kubernetes  │            │
-│  │ (JWT/RBAC)  │  │ Grafana)    │  │ Ready)      │            │
-│  └─────────────┘  └─────────────┘  └─────────────┘            │
-└─────────────────────────────────────────────────────────────────┘
+Input Memory
+     ↓
+[very_new] → [mid_term] → [long_term]
+   7 days      30 days      365 days
+     ↓           ↓            ↓
+  Raw text → Summarized → Compressed
 ```
 
----
-
-## 🏆 Competitive Advantage
-
-### **How Memorizer Stands Out**
-
-| Feature | **Memorizer** | Zep | Letta (MemGPT) | Mem0 | Redis-based |
-|---------|---------------|-----|----------------|------|-------------|
-| **Memory Lifecycle** | ✅ **3-tier intelligent** | ❌ Temporal graph only | ❌ Infinite context | ❌ Basic persistence | ❌ Manual decay |
-| **Production Ready** | ✅ **Enterprise-grade** | ✅ SOC 2 compliant | ❌ Development focus | ❌ Lightweight only | ❌ Manual setup |
-| **Cost Optimization** | ✅ **Smart compression** | ❌ No compression | ❌ Infinite context | ✅ Basic filtering | ❌ No optimization |
-| **Developer Experience** | ✅ **5-minute setup** | ✅ Good tooling | ✅ Strong tooling | ✅ Easy to use | ❌ Manual coding |
-| **Scalability** | ✅ **K8s + Cloud** | ✅ High availability | ✅ Scalable | ❌ Limited | ✅ Redis scaling |
-
-### **Key Differentiators**
-
-- **🧠 Intelligent Memory Lifecycle**: Only solution with automatic 3-tier memory evolution (raw → compressed → aggregated)
-- **💰 Cost Optimization**: 60-80% reduction in token usage through smart compression
-- **🏗️ Production-First**: Enterprise-grade security, monitoring, and Kubernetes-native deployment
-- **🔌 Framework Agnostic**: Works with any AI framework while providing deep integrations
-- **⚡ Developer Experience**: 5-minute setup vs. hours of configuration for competitors
-
----
-
-## 🎯 Use Cases
-
-### **Customer Service & Support**
-- **Chatbots** that remember user preferences and conversation history
-- **Support agents** with context-aware responses across multiple sessions
-- **FAQ systems** that learn from user interactions and improve over time
-- **Ticket routing** based on user history and preferences
-
-### **E-commerce & Personalization**
-- **Product recommendations** based on browsing and purchase history
-- **Shopping assistants** that remember size preferences, brands, and budgets
-- **Price tracking** and alert systems with user-specific criteria
-- **Inventory management** with demand prediction based on user behavior
-
-### **Healthcare & Wellness**
-- **Patient management** systems that track symptoms and treatment history
-- **Telemedicine** platforms with comprehensive patient context
-- **Medication reminders** with personalized scheduling
-- **Health monitoring** with trend analysis and alert systems
-
-### **Education & Training**
-- **Personalized learning** paths based on student progress and preferences
-- **Tutoring systems** that adapt to individual learning styles
-- **Skill assessment** with continuous improvement tracking
-- **Course recommendations** based on career goals and interests
-
-### **Financial Services**
-- **Investment advisors** with personalized portfolio recommendations
-- **Fraud detection** systems with user behavior patterns
-- **Credit scoring** with comprehensive financial history
-- **Budgeting tools** that learn spending patterns and suggest optimizations
-
-### **Content & Media**
-- **Content curation** based on reading/viewing history and preferences
-- **News aggregation** with personalized filtering and relevance scoring
-- **Social media** feeds with intelligent content prioritization
-- **Streaming services** with advanced recommendation algorithms
-
-### **Enterprise & Business**
-- **CRM systems** with comprehensive customer interaction history
-- **Sales automation** with lead scoring and follow-up optimization
-- **Project management** with team collaboration and knowledge retention
-- **Knowledge bases** that evolve based on user queries and feedback
-
----
-
-## 🤖 Compression Agent
-
-### **What is the Compression Agent?**
-
-The Compression Agent is Memorizer's **intelligent memory optimization engine** that automatically transforms raw conversations into compressed, meaningful summaries while preserving critical information.
-
-### **How It Works**
-
-```python
-# Memory Lifecycle Flow
-Raw Conversation (Very New)
-    ↓ (after 10 days or N sessions)
-Compression Agent Processing
-    ↓
-Compressed Summary (Mid-term)
-    ↓ (after 12 months)
-Aggregated Brief (Long-term)
-```
-
-### **Compression Process**
-
-1. **Content Analysis**: Identifies key topics, sentiment, and important facts
-2. **Redundancy Removal**: Eliminates repetitive or unnecessary information
-3. **Context Preservation**: Maintains user preferences, decisions, and critical details
-4. **Summary Generation**: Creates concise summaries using LLM-powered compression
-5. **Quality Validation**: Ensures compressed content retains essential meaning
-
-### **Key Features**
-
-- **🎯 Smart Compression**: Reduces content by 60-80% while preserving meaning
-- **🧠 Multi-LLM Support**: Supports OpenAI, Anthropic, Groq, OpenRouter, Ollama, and custom models
-- **⚡ Background Processing**: Non-blocking compression via Celery workers
-- **🔄 Configurable**: Customizable compression policies and thresholds
-- **📊 Analytics**: Tracks compression effectiveness and quality metrics
-
-### **Compression Examples**
-
-#### **Before Compression (Raw)**
-```
-User: "Hi, I'm looking for a laptop for programming. I need something with at least 16GB RAM, 
-good battery life, and a comfortable keyboard. My budget is around $1500. I also need it to 
-be portable since I travel frequently. I've been looking at MacBooks but they're expensive. 
-What would you recommend?"
-
-Agent: "Based on your requirements, I'd recommend the Dell XPS 13 or ThinkPad X1 Carbon. 
-Both offer excellent keyboards, good battery life, and are highly portable. The XPS 13 
-starts around $1200 with 16GB RAM, while the ThinkPad X1 Carbon is around $1400. Both 
-are great for programming and much more affordable than MacBooks."
-```
-
-#### **After Compression (Mid-term)**
-```
-User seeking programming laptop: 16GB RAM, good battery, comfortable keyboard, $1500 budget, 
-portable for travel. Considering MacBooks but finds them expensive.
-
-Recommended: Dell XPS 13 ($1200) or ThinkPad X1 Carbon ($1400). Both have excellent keyboards, 
-good battery life, portability, and are programming-friendly. More affordable than MacBooks.
-```
-
-#### **After Aggregation (Long-term)**
-```
-User preferences: Programming laptop, 16GB RAM, portable, $1500 budget, prefers value over 
-premium brands. Recommended Dell XPS 13 and ThinkPad X1 Carbon. Budget-conscious, travels frequently.
-```
-
-### **Benefits**
-
-- **💰 Cost Reduction**: 60-80% fewer tokens for LLM processing
-- **⚡ Performance**: Faster retrieval and processing
-- **🧠 Memory Efficiency**: More memories stored in same space
-- **📈 Scalability**: Better performance at scale
-- **🎯 Relevance**: Preserves important information while removing noise
-
----
-
-## 🤖 LLM Providers
-
-### **Supported Providers**
-
-Memorizer supports multiple LLM providers for maximum flexibility and cost optimization:
-
-| Provider | Description | Best For | Models |
-|----------|-------------|----------|---------|
-| **OpenAI** | GPT models | General use, high quality | `gpt-4o-mini`, `gpt-4o`, `gpt-3.5-turbo` |
-| **Anthropic** | Claude models | Complex reasoning, long context | `claude-3-sonnet`, `claude-3-opus`, `claude-3-haiku` |
-| **Groq** | Fast inference | Speed-critical applications | `llama3-8b-8192`, `mixtral-8x7b-32768` |
-| **OpenRouter** | Multiple models | Cost optimization, model variety | `anthropic/claude-3-sonnet`, `openai/gpt-4o-mini` |
-| **Ollama** | Local models | Privacy, offline use | `llama3:8b`, `mistral:7b`, `codellama:7b` |
-| **Custom** | Enterprise APIs | Private models, custom endpoints | Any OpenAI-compatible API |
-
-### **Model Recommendations by Use Case**
-
-```bash
-# General purpose (balanced quality/speed/cost)
-LLM_PROVIDER=openai
-LLM_MODEL=gpt-4o-mini
-
-# Fast inference (speed priority)
-LLM_PROVIDER=groq
-LLM_MODEL=llama3-8b-8192
-
-# Cost optimization (cheap models)
-LLM_PROVIDER=openrouter
-LLM_MODEL=openai/gpt-3.5-turbo
-
-# High quality (best results)
-LLM_PROVIDER=anthropic
-LLM_MODEL=claude-3-opus-20240229
-
-# Local deployment (privacy)
-LLM_PROVIDER=ollama
-LLM_MODEL=llama3:8b
-
-# Coding tasks
-LLM_PROVIDER=groq
-LLM_MODEL=deepseek-coder-6.7b-instruct
-```
-
-### **Discovery Utility**
-
-Use the built-in discovery utility to explore available models:
-
-```bash
-# List all providers
-python scripts/llm_discovery.py list
-
-# Get detailed info about a provider
-python scripts/llm_discovery.py info groq
-
-# See model recommendations
-python scripts/llm_discovery.py recommend
-
-# Test a provider
-python scripts/llm_discovery.py test mock
-
-# Validate a model
-python scripts/llm_discovery.py validate groq llama3-8b-8192
-```
-
-### **Configuration**
-
-Set your preferred provider and model in `.env`:
-
-```bash
-# Primary LLM provider
-LLM_PROVIDER=openai
-LLM_MODEL=gpt-4o-mini  # Fallback model name
-
-# Provider-specific model names (takes precedence over LLM_MODEL)
-OPENAI_MODEL=gpt-4o-mini
-ANTHROPIC_MODEL=claude-3-sonnet-20240229
-GROQ_MODEL=llama3-8b-8192
-OPENROUTER_MODEL=anthropic/claude-3-sonnet-20240229
-OLLAMA_MODEL=llama3:8b
-CUSTOM_MODEL_NAME=your-model-name
-
-# Provider-specific settings
-OPENAI_API_KEY=your_openai_api_key
-ANTHROPIC_API_KEY=your_anthropic_api_key
-GROQ_API_KEY=your_groq_api_key
-OPENROUTER_API_KEY=your_openrouter_api_key
-OLLAMA_BASE_URL=http://localhost:11434
-```
-
-### **Model Name Formats**
-
-Each provider requires specific model name formats:
-
-| Provider | Format | Example | Notes |
-|----------|--------|---------|-------|
-| **OpenAI** | `model_name` | `gpt-4o-mini` | Standard OpenAI model names |
-| **Anthropic** | `model_name` | `claude-3-sonnet-20240229` | Full Claude model names with version |
-| **Groq** | `exact_model_name` | `llama3-8b-8192` | Specific Groq model identifiers |
-| **OpenRouter** | `provider/model_name` | `anthropic/claude-3-sonnet-20240229` | Full path with provider prefix |
-| **Ollama** | `model_name:tag` | `llama3:8b` | Model name with optional tag |
-| **Custom** | `your_model_name` | `enterprise-model` | Your custom model identifier |
-
-### **How Model Names Are Passed**
-
-The framework uses a hierarchical approach for model names:
-
-1. **Provider-specific environment variable** (highest priority):
-   - `OPENAI_MODEL`, `GROQ_MODEL`, `OPENROUTER_MODEL`, etc.
-
-2. **Global fallback** (`LLM_MODEL`):
-   - Used if provider-specific variable is not set
-
-3. **Default model** (lowest priority):
-   - Hardcoded defaults for each provider
-
-```python
-# Example: How model names are resolved
-# If LLM_PROVIDER=groq and GROQ_MODEL=llama3-8b-8192
-# The framework will use "llama3-8b-8192" as the model name
-
-# If LLM_PROVIDER=openrouter and only LLM_MODEL=anthropic/claude-3-sonnet-20240229
-# The framework will use "anthropic/claude-3-sonnet-20240229" as the model name
-```
-
----
-
-## 🚀 Quickstart
-
-### 1. Clone the repo
-```bash
-git clone https://github.com/cyberbeamhq/memorizer.git
-cd memorizer
-```
-
-### 2. Set up environment
-Copy the example .env file and update it with your credentials:
-
-```bash
-cp .env.example .env
-```
-
-You'll need:
-- `OPENAI_API_KEY` (or other LLM provider key)
-- `DATABASE_URL` (Postgres connection string)
-- Optional vector DB API keys (e.g. Pinecone)
-
-### 3. Install dependencies
-
-#### For Production:
-```bash
-pip install -r requirements.txt
-```
-
-#### For Development:
-```bash
-pip install -r requirements-dev.txt
-```
-
-#### With Optional Features:
-```bash
-pip install -r requirements.txt
-pip install -r requirements-optional.txt
-```
-
-#### Using pyproject.toml (Modern Python):
-```bash
-# Production
-pip install .
-
-# Development
-pip install .[dev]
-
-# With specific optional features
-pip install .[dev,pinecone,weaviate,monitoring]
-
-# All optional features
-pip install .[dev,all]
-```
-
-### 4. Run database migrations
-```bash
-python scripts/init_db.py
-```
-
-### 5. Try a local demo
-```bash
-python demo.py
-```
-
-### 6. Docker Deployment
-
-#### Development:
-```bash
-docker-compose up -d
-```
-
-#### Production:
-```bash
-docker-compose -f docker-compose.prod.yml up -d
-```
-
-The Docker setup includes:
-- PostgreSQL database
-- Redis for caching and job queues
-- Memorizer API with auto-reload (dev) or production optimizations
-- Celery workers for background tasks
-- Prometheus and Grafana for monitoring
-
----
-
-## 🔧 Example: E-commerce AI Assistant
-
-Memorizer can back an e-commerce assistant:
-
-- **Very new memory**: Last 5 support chats ("Where is my order?")
-- **Mid-term memory**: Summarized chat history ("Customer had 12 refund requests in 2024")
-- **Long-term memory**: Aggregated insights ("Customer prefers express shipping, positive sentiment about product quality, negative about delivery speed")
-
-When the customer chats again:
-1. Assistant retrieves relevant context from Memorizer.
-2. Uses hybrid retrieval: keyword search for "refund", vector fallback for older "delivery delay" issues.
-3. Responds with awareness of customer history, without blowing up tokens.
-
----
-
-## 🛠️ Tech Stack
-
-### **Core Technologies**
-- **Language**: Python 3.8+ (3.10+ recommended)
-- **Database**: PostgreSQL 12+ with JSONB support
-- **Cache & Queues**: Redis 6+
-- **Web Framework**: FastAPI with async support
-- **Background Jobs**: Celery with Redis broker
-
-### **AI & ML**
-- **LLM Providers**: OpenAI, Anthropic, Groq, OpenRouter, Ollama, Custom APIs
-- **Vector Databases**: Pinecone, Weaviate, Chroma, pgvector
-- **Embedding Providers**: OpenAI, Cohere, HuggingFace, sentence-transformers
-- **AI Frameworks**: LangChain, LlamaIndex, AutoGPT, CrewAI
-
-### **Infrastructure & DevOps**
-- **Containerization**: Docker with multi-stage builds
-- **Orchestration**: Kubernetes with Helm charts
-- **Monitoring**: Prometheus, Grafana, Sentry
-- **CI/CD**: GitHub Actions with comprehensive testing
-- **Cloud**: AWS, Azure, Google Cloud ready
-
-### **Security & Compliance**
-- **Authentication**: JWT tokens, API keys
-- **Authorization**: Role-based access control (RBAC)
-- **Security**: Input validation, XSS/SQL injection protection
-- **Compliance**: Audit logging, data encryption
-
----
-
-## 📂 Repository Structure
+### Core Components
 
 ```
 memorizer/
-├── src/                          # Core framework modules
-│   ├── memory_manager.py         # Memory lifecycle orchestration
-│   ├── db.py                     # Database schema & queries
-│   ├── compression_agent.py      # LLM-powered summarization
-│   ├── llm_providers.py          # Multi-provider LLM support
-│   ├── retrieval.py              # Hybrid context retrieval
-│   ├── vector_db.py              # Vector database abstraction
-│   ├── embeddings.py             # Embedding providers
-│   ├── api.py                    # FastAPI REST interface
-│   ├── auth.py                   # Authentication & authorization
-│   ├── security.py               # Security & RBAC
-│   ├── config.py                 # Configuration management
-│   ├── validation.py             # Input validation & sanitization
-│   ├── cache.py                  # Redis caching layer
-│   ├── rate_limiter.py           # API rate limiting
-│   ├── errors.py                 # Error handling framework
-│   ├── agent_integrations.py     # AI framework integrations
-│   ├── agent_interface.py        # Standardized agent interface
-│   ├── memory_templates.py       # Memory structure templates
-│   ├── agent_profiles.py         # Agent-specific configurations
-│   ├── logging_config.py         # Structured logging
-│   ├── tracing_middleware.py     # Request tracing
-│   ├── performance_monitor.py    # Performance metrics
-│   ├── health_monitor.py         # Health checks
-│   ├── automated_testing.py      # Automated testing
-│   ├── dashboard.py              # Monitoring dashboard
-│   ├── type_checking.py          # Runtime type validation
-│   ├── utils.py                  # Utility functions
-│   └── tasks/                    # Celery background tasks
-│       └── embedding_tasks.py    # Embedding generation tasks
-├── examples/                     # Usage examples
-│   └── agent_memory_example.py   # Comprehensive example
-├── scripts/                      # Database & deployment scripts
-│   ├── init_db.py               # Database initialization
-│   ├── migrate.py               # Database migrations
-│   └── llm_discovery.py         # LLM provider discovery utility
-├── k8s/                         # Kubernetes manifests
-│   ├── deployment.yaml          # K8s deployment
-│   ├── configmap.yaml           # Configuration
-│   └── namespace.yaml           # Namespace
-├── requirements.txt             # Production dependencies
-├── requirements-dev.txt         # Development dependencies
-├── requirements-optional.txt    # Optional integrations
-├── pyproject.toml              # Project metadata & dependencies
-├── Dockerfile                  # Production Docker image
-├── Dockerfile.dev              # Development Docker image
-├── docker-compose.yml          # Development environment
-├── docker-compose.prod.yml     # Production environment
-├── .github/workflows/ci.yml    # CI/CD pipeline
-├── README.md                   # This file
-├── INSTALLATION.md             # Detailed installation guide
-├── USAGE.md                    # Usage documentation
-├── MONITORING.md               # Monitoring setup guide
-├── .env.example                # Environment variables
-├── monitoring.env.example      # Monitoring configuration
-└── demo.py                     # Quick demo script
+├── memory/           # Memory manager and lifecycle
+├── core/            # Interfaces and configuration
+├── builtins/        # Storage, retrievers, summarizers
+├── storage/         # Database and external providers
+├── retrieval/       # Hybrid search algorithms
+├── security/        # PII detection and filtering
+└── integrations/    # LLM and agent integrations
 ```
 
----
+## 📖 Supported Providers
 
-## 📊 Roadmap
+### Database Providers
+- **Memory**: In-memory storage (development)
+- **Supabase**: PostgreSQL with real-time features
+- **Railway**: Simple PostgreSQL hosting
+- **Neon**: Serverless PostgreSQL
+- **PostgreSQL**: Direct PostgreSQL connection
 
-### ✅ **Completed Features**
-- [x] **Core Memory Management** - Three-tier memory lifecycle with intelligent compression
-- [x] **Production Infrastructure** - FastAPI, Celery, Redis, PostgreSQL
-- [x] **Security & Authentication** - JWT, API keys, RBAC, input validation
-- [x] **Monitoring & Observability** - Prometheus, Grafana, structured logging
-- [x] **AI Framework Integrations** - LangChain, LlamaIndex, AutoGPT, CrewAI
-- [x] **Vector Database Support** - Pinecone, Weaviate, Chroma, pgvector
-- [x] **Docker & Kubernetes** - Production-ready containerization
-- [x] **Comprehensive Testing** - Unit, integration, and performance tests
+### Vector Stores
+- **Memory**: In-memory vectors (development)
+- **SQLite**: Local vector storage
+- **Pinecone**: Managed vector database
+- **Weaviate**: Open-source vector search
+- **Chroma**: Embedding database
 
-### 🚧 **In Progress**
-- [ ] **Advanced Analytics** - Memory usage patterns and optimization insights
-- [ ] **Multi-tenant Support** - Isolated memory spaces for different organizations
-- [ ] **GraphQL API** - Alternative to REST API for complex queries
+### LLM Providers
+- **OpenAI**: GPT models for summarization
+- **Anthropic**: Claude models
+- **Groq**: Fast inference
+- **Mock**: For testing/development
 
-### 🔮 **Future Features**
-- [ ] **Federated Learning** - Distributed memory learning across agents
-- [ ] **Memory Provenance** - Detailed tracking of why memories were kept/removed
-- [ ] **Advanced Compression** - Custom compression policies and rules
-- [ ] **Memory Visualization** - Interactive dashboards for memory exploration
-- [ ] **Edge Computing** - Lightweight version for edge deployments
-- [ ] **Memory Marketplace** - Sharing and trading memory insights
+## 🔧 External Provider Setup
 
----
+### Supabase Configuration
+
+```python
+import memorizer
+
+memory = memorizer.create_memory_manager(
+    storage_provider="supabase",
+    supabase_url="https://your-project.supabase.co",
+    supabase_password="your-database-password"
+)
+```
+
+**Required Environment Variables:**
+```bash
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_DB_PASSWORD=your_database_password
+```
+
+### Pinecone Configuration
+
+```python
+import memorizer
+
+memory = memorizer.create_memory_manager(
+    vector_store="pinecone",
+    pinecone_api_key="your-api-key",
+    pinecone_environment="us-west1-gcp"
+)
+```
+
+**Required Environment Variables:**
+```bash
+PINECONE_API_KEY=your_api_key
+PINECONE_ENVIRONMENT=us-west1-gcp
+```
+
+### Complete External Setup
+
+```python
+import memorizer
+
+# Production setup with Supabase + Pinecone + OpenAI
+memory = memorizer.create_memory_manager(
+    storage_provider="supabase",
+    vector_store="pinecone",
+    llm_provider="openai",
+    supabase_url="https://your-project.supabase.co",
+    supabase_password="your-password",
+    pinecone_api_key="your-pinecone-key",
+    openai_api_key="your-openai-key"
+)
+```
+
+## 🧪 Examples
+
+### Basic Memory Operations
+
+```python
+import memorizer
+
+memory = memorizer.create_memory()
+user_id = "demo_user"
+
+# Store different types of memories
+memories = [
+    "I prefer morning workouts at 6 AM",
+    "My favorite cuisine is Italian food",
+    "Working on a Python ML project",
+    "Planning a trip to Japan next year"
+]
+
+for content in memories:
+    memory.store_memory(user_id, content)
+
+# Search with different queries
+queries = ["exercise habits", "food preferences", "programming work"]
+
+for query in queries:
+    results = memory.search_memories(user_id, query, limit=2)
+    print(f"'{query}' found {len(results.memories)} memories")
+```
+
+### Integration with LangChain
+
+```python
+import memorizer
+from langchain.memory import ConversationBufferMemory
+
+# Create memory manager
+memory_manager = memorizer.create_memory_manager(
+    storage_provider="supabase",
+    llm_provider="openai"
+)
+
+# Custom LangChain memory class
+class MemorizerMemory(ConversationBufferMemory):
+    def __init__(self, user_id: str, **kwargs):
+        super().__init__(**kwargs)
+        self.user_id = user_id
+        self.memory_manager = memory_manager
+
+    def save_context(self, inputs: dict, outputs: dict):
+        # Save to both LangChain and Memorizer
+        super().save_context(inputs, outputs)
+
+        # Store in Memorizer for long-term memory
+        conversation = f"User: {inputs.get('input', '')}\nAI: {outputs.get('output', '')}"
+        self.memory_manager.store_memory(self.user_id, conversation)
+```
+
+### Custom AI Application
+
+```python
+import memorizer
+
+class AIAssistant:
+    def __init__(self, user_id: str):
+        self.user_id = user_id
+        self.memory = memorizer.create_memory_manager(
+            storage_provider="supabase",
+            vector_store="pinecone"
+        )
+
+    def process_message(self, message: str) -> str:
+        # Retrieve relevant context
+        context = self.memory.search_memories(
+            self.user_id,
+            message,
+            limit=5
+        )
+
+        # Generate response (your LLM logic here)
+        response = self.generate_response(message, context)
+
+        # Store the interaction
+        interaction = f"User: {message}\nAssistant: {response}"
+        self.memory.store_memory(self.user_id, interaction)
+
+        return response
+```
+
+## 📁 Project Structure
+
+```
+memorizer/
+├── src/memorizer/          # Main library code
+├── examples/               # Example scripts and tutorials
+├── tests/                  # Test suite
+├── docs/                   # Documentation
+├── archive/                # Archived/legacy components
+├── README.md              # This file
+├── requirements.txt       # Core dependencies
+├── .env.example          # Environment configuration template
+├── memorizer.yaml.example # Advanced configuration template
+└── setup.py              # Package setup
+```
+
+## 🎯 Perfect For
+
+- 🤖 **AI Chatbots** with persistent memory
+- 🔍 **RAG Applications** with intelligent context
+- 📝 **AI Writing Assistants** that remember user preferences
+- 🎮 **AI Game NPCs** with evolving personalities
+- 📊 **Analytics Tools** that learn from interactions
+
+## 🆚 Why Memorizer?
+
+### vs. Building Your Own
+- ✅ Proven memory lifecycle algorithms
+- ✅ Battle-tested external provider integrations
+- ✅ PII protection out of the box
+- ✅ Optimized search algorithms
+
+### vs. Other Memory Libraries
+- ✅ **Focused**: Pure memory management, no infrastructure bloat
+- ✅ **External Providers**: Easy integration with Supabase, Pinecone, etc.
+- ✅ **Lifecycle Management**: Intelligent aging and compression
+- ✅ **Simple API**: Get started in minutes, not hours
+
+### vs. Vector Databases Directly
+- ✅ **Higher Level**: Memory lifecycle, not just vector storage
+- ✅ **Hybrid Search**: Combines keyword + vector search
+- ✅ **LLM Integration**: Built-in summarization and compression
+- ✅ **Multi-Provider**: Switch between Pinecone, Weaviate, etc. easily
 
 ## 🤝 Contributing
 
-We welcome contributions from the community! Here's how you can help:
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-### **Ways to Contribute**
-- 🐛 **Report bugs** and suggest features via [GitHub Issues](https://github.com/cyberbeamhq/memorizer/issues)
-- 🔧 **Submit pull requests** for bug fixes and new features
-- 📚 **Improve documentation** and add usage examples
-- 🧪 **Add tests** to improve code coverage
-- 🌍 **Add translations** for international users
+## 📄 License
 
-### **Development Setup**
-1. Fork the repository
-2. Clone your fork: `git clone https://github.com/yourusername/memorizer.git`
-3. Install development dependencies: `pip install -r requirements-dev.txt`
-4. Create a feature branch: `git checkout -b feature/your-feature`
-5. Make your changes and add tests
-6. Run tests: `pytest`
-7. Submit a pull request
-
-### **Code Standards**
-- Follow PEP 8 style guidelines
-- Add type hints to all functions
-- Include docstrings for all public APIs
-- Write tests for new functionality
-- Update documentation as needed
-
-### **Community**
-- 💬 Join our [Discord Community](https://discord.gg/memorizer)
-- 📧 Contact us at [team@memorizer.dev](mailto:team@memorizer.dev)
-- 🐦 Follow us on [Twitter](https://twitter.com/memorizer_dev)
+MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-## 📚 Documentation & Support
+**Get started in 30 seconds:**
 
-### **Documentation**
-- 📖 **[Full Documentation](https://docs.memorizer.dev)** - Complete API reference and guides
-- 🚀 **[Installation Guide](INSTALLATION.md)** - Detailed setup instructions
-- 📋 **[Usage Examples](USAGE.md)** - Practical usage scenarios
-- 📊 **[Monitoring Guide](MONITORING.md)** - Observability setup
+```bash
+pip install memorizer
+```
 
-### **Support**
-- 🐛 **[Bug Reports](https://github.com/cyberbeamhq/memorizer/issues)** - Report issues
-- 💡 **[Feature Requests](https://github.com/cyberbeamhq/memorizer/discussions)** - Suggest new features
-- 💬 **[Community Support](https://discord.gg/memorizer)** - Get help from the community
-- 📧 **[Enterprise Support](mailto:support@memorizer.dev)** - Commercial support options
-
----
-
-## 📜 License
-
-MIT License.  
-See [LICENSE](./LICENSE) for details.
-
----
-
-## 🙏 Acknowledgments
-
-- **OpenAI** for providing the GPT models that power our compression
-- **FastAPI** team for the excellent web framework
-- **PostgreSQL** community for the robust database platform
-- **All contributors** who help make Memorizer better
-
----
-
-<div align="center">
-
-**Made with ❤️ by the Memorizer Team**
-
-[Website](https://memorizer.dev) • [Documentation](https://docs.memorizer.dev) • [GitHub](https://github.com/cyberbeamhq/memorizer) • [Discord](https://discord.gg/memorizer)
-
-</div>
+```python
+import memorizer
+memory = memorizer.create_memory()
+memory.store_memory("user1", "I love coffee")
+results = memory.search_memories("user1", "beverages")
+print(results.memories[0].content)  # "I love coffee"
+```

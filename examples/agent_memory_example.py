@@ -12,16 +12,11 @@ from datetime import datetime, timedelta
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from src import (
-    memory_manager, 
-    db, 
-    vector_db, 
-    embeddings,
-    agent_interface,
-    agent_integrations,
-    memory_templates,
-    agent_profiles
-)
+from memorizer.memory import memory_manager
+from memorizer.storage import db, vector_db
+from memorizer.integrations import embeddings, agent_interface, agent_integrations
+from memorizer.memory import memory_templates
+from memorizer.integrations import agent_profiles
 
 # Configure logging
 logging.basicConfig(

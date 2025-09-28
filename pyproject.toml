@@ -4,44 +4,71 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "memorizer"
-version = "0.1.0"
+version = "1.0.0"
 description = "Production-ready memory lifecycle framework for AI assistants and agents"
 readme = "README.md"
-requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
-    {name = "Memorizer Team", email = "team@memorizer.dev"},
+    {name = "Memorizer Team", email = "team@memorizer.ai"}
 ]
-keywords = ["ai", "memory", "agents", "llm", "framework"]
+maintainers = [
+    {name = "Memorizer Team", email = "team@memorizer.ai"}
+]
+keywords = [
+    "ai", "memory", "framework", "agents", "llm", "langchain", 
+    "llamaindex", "autogpt", "crewai", "vector-database", 
+    "embeddings", "retrieval", "lifecycle"
+]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Database",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
 ]
-
+requires-python = ">=3.8"
 dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.0.0",
+    "sqlalchemy>=2.0.0",
     "psycopg2-binary>=2.9.0",
-    "python-dotenv>=1.0.0",
-    "numpy>=1.24.0",
+    "redis>=5.0.0",
+    "pymongo>=4.0.0",
     "openai>=1.0.0",
+    "anthropic>=0.7.0",
     "cohere>=4.0.0",
     "transformers>=4.30.0",
     "torch>=2.0.0",
-    "python-dateutil>=2.8.0",
-    "fastapi>=0.100.0",
-    "uvicorn>=0.20.0",
-    "pydantic>=2.0.0",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "scikit-learn>=1.3.0",
+    "nltk>=3.8.0",
+    "spacy>=3.6.0",
+    "pinecone-client>=2.2.0",
+    "weaviate-client>=3.25.0",
+    "chromadb>=0.4.0",
     "celery>=5.3.0",
-    "redis>=4.5.0",
+    "rq>=1.15.0",
     "prometheus-client>=0.17.0",
-    "sentry-sdk>=1.30.0",
+    "structlog>=23.0.0",
+    "python-multipart>=0.0.6",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0.0",
+    "click>=8.1.0",
+    "rich>=13.0.0",
+    "typer>=0.9.0",
 ]
 
 [project.optional-dependencies]
@@ -50,129 +77,109 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",
     "pytest-mock>=3.11.0",
-    "pytest-xdist>=3.3.0",
-    "pytest-html>=3.2.0",
-    "pytest-benchmark>=4.0.0",
-    "factory-boy>=3.3.0",
-    "faker>=19.0.0",
-    "httpx>=0.24.0",
-    "black>=23.7.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
     "flake8>=6.0.0",
     "mypy>=1.5.0",
-    "isort>=5.12.0",
     "pre-commit>=3.3.0",
-    "bandit>=1.7.5",
+    "coverage>=7.2.0",
+    "bandit>=1.7.0",
     "safety>=2.3.0",
-    "pylint>=2.17.0",
-    "autopep8>=2.0.0",
-    "sphinx>=7.1.0",
-    "sphinx-rtd-theme>=1.3.0",
-    "myst-parser>=2.0.0",
-    "sphinx-autodoc-typehints>=1.24.0",
-    "locust>=2.17.0",
-    "memory-profiler>=0.61.0",
-    "py-spy>=0.3.14",
-    "cryptography>=41.0.0",
-    "semgrep>=1.45.0",
-    "ipython>=8.15.0",
+    "mypy-extensions>=1.0.0",
+    "types-PyYAML>=6.0.0",
+    "types-redis>=4.6.0",
+    "types-requests>=2.31.0",
+]
+optional = [
+    "langchain>=0.1.0",
+    "llama-index>=0.9.0",
+    "crewai>=0.1.0",
+    "autogpt>=0.1.0",
     "jupyter>=1.0.0",
     "notebook>=7.0.0",
-    "ipdb>=0.13.13",
-    "rich>=13.5.0",
-]
-# Vector database providers
-pinecone = [
-    "pinecone-client>=2.2.0",
-]
-weaviate = [
-    "weaviate-client>=3.0.0",
-]
-chroma = [
-    "chromadb>=0.4.0",
-]
-pgvector = [
-    "pgvector>=0.2.0",
-]
-# Monitoring and logging
-monitoring = [
-    "structlog>=23.0.0",
-    "elasticsearch>=8.0.0",
-    "fluent-logger>=0.10.0",
-    "loguru>=0.7.0",
-]
-# Async support
-async = [
-    "aiofiles>=23.0.0",
-    "aiohttp>=3.8.0",
-    "aioredis>=2.0.0",
-]
-# Data processing
-data = [
-    "pandas>=2.0.0",
-    "scikit-learn>=1.3.0",
+    "ipywidgets>=8.0.0",
     "matplotlib>=3.7.0",
     "seaborn>=0.12.0",
-]
-# Web framework integrations
-web = [
-    "flask>=2.3.0",
-    "django>=4.2.0",
-    "starlette>=0.27.0",
-]
-# Authentication providers
-auth = [
-    "authlib>=1.2.0",
-    "python-jose>=3.3.0",
-    "passlib>=1.7.4",
-]
-# Cloud providers
-cloud = [
-    "boto3>=1.28.0",
-    "google-cloud-storage>=2.10.0",
-    "azure-storage-blob>=12.17.0",
-]
-# Message queues
-queues = [
-    "kafka-python>=2.0.0",
-    "pika>=1.3.0",
-    "celery[redis]>=5.3.0",
-]
-# AI/ML frameworks
-ai = [
-    "langchain>=0.0.300",
-    "llama-index>=0.8.0",
-    "autogpt>=0.4.0",
-    "crewai>=0.1.0",
-]
-# Deployment tools
-deploy = [
-    "gunicorn>=21.2.0",
-    "supervisor>=4.2.0",
-]
-# All optional dependencies
-all = [
-    "memorizer[pinecone,weaviate,chroma,pgvector,monitoring,async,data,web,auth,cloud,queues,ai,deploy]",
+    "plotly>=5.15.0",
+    "streamlit>=1.25.0",
+    "gradio>=3.40.0",
+    "dash>=2.11.0",
+    "bokeh>=3.2.0",
+    "altair>=5.1.0",
+    "babel>=2.12.0",
+    "pytz>=2023.3",
+    "dateutil>=2.8.0",
+    "croniter>=1.4.0",
+    "schedule>=1.2.0",
+    "apscheduler>=3.10.0",
+    "tenacity>=8.2.0",
+    "backoff>=2.2.0",
+    "retrying>=1.3.0",
+    "circuit-breaker>=1.4.0",
+    "ratelimit>=2.2.0",
+    "limits>=3.5.0",
+    "cachetools>=5.3.0",
+    "diskcache>=5.6.0",
+    "joblib>=1.3.0",
+    "dill>=0.3.0",
+    "cloudpickle>=2.2.0",
+    "pickle5>=0.0.12",
+    "msgpack>=1.0.0",
+    "orjson>=3.9.0",
+    "ujson>=5.8.0",
+    "rapidjson>=1.0.0",
+    "simplejson>=3.19.0",
+    "cbor2>=5.5.0",
+    "toml>=0.10.0",
+    "tomli>=2.0.0",
+    "tomli-w>=1.0.0",
+    "configparser>=5.3.0",
+    "python-decouple>=3.8",
+    "dynaconf>=3.2.0",
+    "pydantic-settings>=2.0.0",
+    "environs>=10.0.0",
+    "python-dotenv>=1.0.0",
+    "click-plugins>=2.0.0",
+    "click-repl>=0.2.0",
+    "click-shell>=2.0.0",
+    "click-spinner>=0.1.0",
+    "click-option-group>=0.5.0",
+    "click-aliases>=0.1.0",
+    "click-params>=0.1.0",
+    "click-extra>=0.1.0",
+    "click-log>=0.4.0",
+    "click-utils>=0.1.0",
+    "click-help-colors>=0.9.0",
+    "click-command-tree>=0.1.0",
+    "click-option-group>=0.5.0",
+    "click-aliases>=0.1.0",
+    "click-params>=0.1.0",
+    "click-extra>=0.1.0",
+    "click-log>=0.4.0",
+    "click-utils>=0.1.0",
+    "click-help-colors>=0.9.0",
+    "click-command-tree>=0.1.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/memorizer/memorizer"
-Documentation = "https://docs.memorizer.dev"
-Repository = "https://github.com/memorizer/memorizer.git"
-"Bug Tracker" = "https://github.com/memorizer/memorizer/issues"
+Homepage = "https://github.com/memorizer-ai/memorizer"
+Documentation = "https://docs.memorizer.ai"
+Repository = "https://github.com/memorizer-ai/memorizer.git"
+"Bug Tracker" = "https://github.com/memorizer-ai/memorizer/issues"
+Changelog = "https://github.com/memorizer-ai/memorizer/blob/main/CHANGELOG.md"
 
 [project.scripts]
-memorizer = "memorizer.cli:main"
+memorizer = "memorizer.cli.memorizer_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools.package-dir]
-"" = "src"
+[tool.setuptools.package-data]
+memorizer = ["*.yaml", "*.yml", "*.json", "templates/*", "configs/*"]
 
-# Black configuration
 [tool.black]
 line-length = 88
-target-version = ['py38', 'py39', 'py310', 'py311']
+target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -188,15 +195,13 @@ extend-exclude = '''
 )/
 '''
 
-# isort configuration
 [tool.isort]
 profile = "black"
 multi_line_output = 3
 line_length = 88
 known_first_party = ["memorizer"]
-known_third_party = ["fastapi", "pydantic", "uvicorn", "psycopg2", "redis", "celery"]
+known_third_party = ["fastapi", "uvicorn", "pydantic", "sqlalchemy", "redis", "pymongo"]
 
-# MyPy configuration
 [tool.mypy]
 python_version = "3.8"
 warn_return_any = true
@@ -212,57 +217,51 @@ warn_no_return = true
 warn_unreachable = true
 strict_equality = true
 show_error_codes = true
-show_column_numbers = true
-show_error_context = true
-pretty = true
 
 [[tool.mypy.overrides]]
 module = [
-    "psycopg2.*",
-    "redis.*",
-    "fastapi.*",
-    "uvicorn.*",
-    "pydantic.*",
-    "openai.*",
-    "cohere.*",
-    "transformers.*",
-    "torch.*",
-    "numpy.*",
     "pinecone.*",
     "weaviate.*",
     "chromadb.*",
     "celery.*",
+    "rq.*",
     "prometheus_client.*",
-    "sentry_sdk.*",
+    "structlog.*",
+    "jose.*",
+    "passlib.*",
+    "dotenv.*",
+    "yaml.*",
+    "click.*",
+    "rich.*",
+    "typer.*",
 ]
 ignore_missing_imports = true
 
-# Pytest configuration
 [tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --strict-config"
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = [
-    "--strict-markers",
-    "--strict-config",
-    "--verbose",
-    "--tb=short",
-]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
+    "e2e: marks tests as end-to-end tests",
 ]
 
-# Coverage configuration
 [tool.coverage.run]
-source = ["src"]
+source = ["src/memorizer"]
 omit = [
     "*/tests/*",
     "*/test_*",
     "*/__pycache__/*",
     "*/migrations/*",
+    "*/venv/*",
+    "*/env/*",
+    "*/build/*",
+    "*/dist/*",
 ]
 
 [tool.coverage.report]
@@ -278,3 +277,10 @@ exclude_lines = [
     "class .*\\bProtocol\\):",
     "@(abc\\.)?abstractmethod",
 ]
+
+[tool.bandit]
+exclude_dirs = ["tests", "test_*"]
+skips = ["B101", "B601"]
+
+[tool.safety]
+output = "json"

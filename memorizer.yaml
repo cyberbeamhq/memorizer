@@ -1,0 +1,164 @@
+# Memorizer Framework Configuration
+# Production-ready memory lifecycle framework for AI assistants and agents
+
+# Core Framework Settings
+framework:
+  name: "memorizer"
+  version: "1.0.0"
+  environment: "development"  # development, staging, production
+
+# Storage Configuration
+storage:
+  type: "storage"
+  name: "sqlite"  # sqlite, postgresql, mongodb
+  config:
+    db_path: ":memory:"  # Use :memory: for testing, or file path for persistence
+    # For PostgreSQL:
+    # db_path: "postgresql://user:password@localhost:5432/memorizer"
+    # For MongoDB:
+    # db_path: "mongodb://localhost:27017/memorizer"
+
+# Cache Configuration
+cache:
+  type: "cache"
+  name: "memory"  # memory, redis
+  config:
+    max_size: 1000
+    ttl: 3600
+    # For Redis:
+    # host: "localhost"
+    # port: 6379
+    # password: ""
+    # db: 0
+
+# Retrieval Configuration
+retriever:
+  type: "retriever"
+  name: "keyword"  # keyword, vector, hybrid
+  config:
+    max_results: 100
+    similarity_threshold: 0.7
+
+# Summarization Configuration
+summarizer:
+  type: "summarizer"
+  name: "mock"  # mock, openai, anthropic, groq
+  config:
+    model: "gpt-4o-mini"
+    max_tokens: 1000
+    temperature: 0.3
+
+# PII Filter Configuration
+pii_filter:
+  type: "pii_filter"
+  name: "basic"  # basic, advanced
+  config:
+    enable_detection: true
+    redaction_mode: "mask"  # mask, remove, hash
+
+# Scoring Configuration
+scorer:
+  type: "scorer"
+  name: "tfidf"  # tfidf, bm25, semantic
+  config:
+    max_features: 10000
+    ngram_range: [1, 2]
+
+# Task Runner Configuration
+task_runner:
+  type: "task_runner"
+  name: "thread"  # thread, celery, rq
+  config:
+    max_workers: 4
+    # For Celery:
+    # broker_url: "redis://localhost:6379/0"
+    # result_backend: "redis://localhost:6379/0"
+
+# Embedding Provider Configuration
+embedding_provider:
+  type: "embedding_provider"
+  name: "openai"  # openai, cohere, huggingface, mock
+  config:
+    model: "text-embedding-3-small"
+    api_key: "test-key"  # Set via environment variable in production
+    batch_size: 100
+
+# Vector Store Configuration
+vector_store:
+  type: "vector_store"
+  name: "weaviate"  # pinecone, weaviate, chroma, pgvector
+  config:
+    # For Pinecone:
+    # api_key: "your-pinecone-api-key"
+    # environment: "us-west1-gcp"
+    # index_name: "memorizer"
+    # For Weaviate:
+    # url: "http://localhost:8080"
+    # For Chroma:
+    # persist_directory: "./chroma_db"
+
+# Memory Lifecycle Configuration
+memory_lifecycle:
+  tiers:
+    very_new:
+      ttl_days: 7
+      max_items: 1000
+      max_age_days: 7
+      min_accesses: 5
+      min_content_length: 1000
+      max_content_length: 10000
+    mid_term:
+      ttl_days: 30
+      max_items: 5000
+      max_age_days: 30
+      min_accesses: 10
+      min_content_length: 500
+      max_content_length: 5000
+    long_term:
+      ttl_days: 365
+      max_items: 10000
+      max_age_days: 365
+      min_accesses: 20
+      min_content_length: 100
+      max_content_length: 1000
+  compression_threshold: 0.8
+  cleanup_interval: 3600
+
+# Security Configuration
+security:
+  enable_pii_detection: true
+  enable_tls_enforcement: false  # Set to true in production
+  enable_secret_rotation: false
+  pii_redaction_mode: "mask"
+  max_failed_attempts: 5
+  lockout_duration: 900
+
+# Performance Configuration
+performance:
+  cache_ttl: 3600
+  batch_size: 100
+  max_workers: 4
+  connection_pool_size: 10
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "json"
+  enable_request_tracing: true
+  enable_performance_metrics: true
+
+# API Configuration
+api:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 1
+  enable_cors: true
+  enable_docs: true
+  rate_limit_per_minute: 100
+
+# Monitoring Configuration
+monitoring:
+  enable_metrics: true
+  enable_health_checks: true
+  metrics_port: 9090
+  health_check_interval: 30

@@ -8,15 +8,13 @@ import os
 import sys
 import json
 import argparse
-from typing import Dict, Any
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 try:
-    from llm_providers import (
-        LLMProviderFactory, 
-        list_available_models, 
+    from memorizer.integrations.llm_providers import (
+        LLMProviderFactory,
         validate_model_for_provider,
         get_model_recommendations,
         validate_provider_config,
@@ -25,6 +23,7 @@ try:
 except ImportError as e:
     print(f"❌ Failed to import llm_providers: {e}")
     print("Make sure you're running this script from the project root directory")
+    print("Tip: Install the package with 'pip install -e .' first")
     sys.exit(1)
 
 
@@ -97,7 +96,7 @@ def test_provider(provider_name: str, model_name: str = None):
         
         # Create provider
         try:
-            from llm_providers import LLMConfig, LLMProviderFactory
+            from src.llm_providers import LLMConfig, LLMProviderFactory
         except ImportError as e:
             print(f"❌ Failed to import LLMConfig: {e}")
             return

@@ -12,7 +12,7 @@ from typing import Dict, Any
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from llm_providers import (
+from memorizer.integrations.llm_providers import (
     LLMProviderFactory,
     LLMConfig,
     get_llm_provider_from_config,
