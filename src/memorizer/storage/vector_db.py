@@ -9,7 +9,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
-from embeddings import embed_text
+from ..integrations.embeddings import embed_text
 
 
 logger = logging.getLogger(__name__)

@@ -2,8 +2,9 @@
 Retrieval components.
 """
 
-from .retrieval import RetrievalManager
+from .retrieval import HybridRetriever, retrieve_context
 
 __all__ = [
-    "RetrievalManager",
+    "HybridRetriever",
+    "retrieve_context",
 ]

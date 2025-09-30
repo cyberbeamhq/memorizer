@@ -5,6 +5,7 @@ Handles connections, inserts, updates, and lifecycle transitions.
 """
 
 import logging
+import threading
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Dict, Iterator, List, Optional
@@ -35,6 +36,7 @@ except Exception as e:
 
 # Connection pool for better performance and connection management
 _connection_pool = None
+_connection_pool_lock = threading.Lock()
 
 
 # ---------------------------
@@ -50,47 +52,54 @@ def init_connection_pool(
         logger.warning("DATABASE_URL not configured, cannot initialize connection pool")
         return
 
-    try:
-        # Use configuration values if not provided
-        if min_conn is None:
-            try:
-                config_manager = get_config_manager()
-                db_config = config_manager.get_database_config()
-                min_conn = db_config.min_connections
-            except:
-                min_conn = 1  # Default fallback
+    # Thread-safe initialization
+    with _connection_pool_lock:
+        # Double-check pattern - check again inside lock
+        if _connection_pool is not None:
+            logger.debug("Connection pool already initialized")
+            return
 
-        if max_conn is None:
-            try:
-                config_manager = get_config_manager()
-                db_config = config_manager.get_database_config()
-                max_conn = db_config.max_connections
-            except:
-                max_conn = 10  # Default fallback
+        try:
+            # Use configuration values if not provided
+            if min_conn is None:
+                try:
+                    config_manager = get_config_manager()
+                    db_config = config_manager.get_database_config()
+                    min_conn = db_config.min_connections
+                except:
+                    min_conn = 1  # Default fallback
 
-        # Enhanced connection pool configuration
-        _connection_pool = SimpleConnectionPool(
-            min_conn,
-            max_conn,
-            DATABASE_URL,
-            cursor_factory=RealDictCursor,
-            # Connection pool settings for better performance
-            kwargs={
-                "connect_timeout": 10,  # Connection timeout
-                "application_name": "memorizer_framework",  # Application identifier
-                "options": "-c default_transaction_isolation=read committed",  # Transaction isolation
-            },
-        )
-        logger.info(
-            f"Database connection pool initialized: {min_conn}-{max_conn} connections"
-        )
+            if max_conn is None:
+                try:
+                    config_manager = get_config_manager()
+                    db_config = config_manager.get_database_config()
+                    max_conn = db_config.max_connections
+                except:
+                    max_conn = 10  # Default fallback
 
-        # Test the connection pool
-        _test_connection_pool()
+            # Enhanced connection pool configuration
+            _connection_pool = SimpleConnectionPool(
+                min_conn,
+                max_conn,
+                DATABASE_URL,
+                cursor_factory=RealDictCursor,
+                # Connection pool settings for better performance
+                kwargs={
+                    "connect_timeout": 10,  # Connection timeout
+                    "application_name": "memorizer_framework",  # Application identifier
+                    "options": "-c default_transaction_isolation=read committed",  # Transaction isolation
+                },
+            )
+            logger.info(
+                f"Database connection pool initialized: {min_conn}-{max_conn} connections"
+            )
 
-    except Exception as e:
-        logger.error(f"Failed to initialize connection pool: {e}")
-        raise
+            # Test the connection pool
+            _test_connection_pool()
+
+        except Exception as e:
+            logger.error(f"Failed to initialize connection pool: {e}")
+            raise
 
 
 def _test_connection_pool() -> None:
@@ -396,7 +405,7 @@ def fetch_memories(
         List of memory dictionaries
     """
     # Validate inputs
-    from .validation import InputValidator
+    from ..utils.validation import InputValidator
 
     user_result = InputValidator.validate_user_id(user_id)
     if not user_result.is_valid:
@@ -433,27 +442,29 @@ def fetch_memories(
         return []
     offset = offset_result.sanitized_value
 
-    # Validate order_by to prevent SQL injection
+    # Validate and sanitize order_by to prevent SQL injection
     allowed_order_columns = ["created_at", "updated_at", "id"]
     allowed_order_directions = ["ASC", "DESC"]
 
     order_parts = order_by.split()
     if len(order_parts) != 2:
-        order_by = "created_at DESC"  # Default safe value
+        order_column = "created_at"
+        order_direction = "DESC"
     else:
         column, direction = order_parts
-        if (
-            column not in allowed_order_columns
-            or direction.upper() not in allowed_order_directions
-        ):
-            order_by = "created_at DESC"  # Default safe value
+        if column in allowed_order_columns and direction.upper() in allowed_order_directions:
+            order_column = column
+            order_direction = direction.upper()
+        else:
+            order_column = "created_at"
+            order_direction = "DESC"
 
-    # Build query with proper parameterization
+    # Build query with proper parameterization - use format only for validated column/direction
     query = f"""
         SELECT id, user_id, content, metadata, tier, created_at, updated_at, source_memory_ids
         FROM memories
         WHERE {' AND '.join(conditions)}
-        ORDER BY {order_by}
+        ORDER BY {order_column} {order_direction}
     """
 
     if limit is not None:
@@ -490,7 +501,7 @@ def search_memories(
         List of matching memories with relevance scores
     """
     # Validate inputs
-    from .validation import InputValidator
+    from ..utils.validation import InputValidator
 
     user_result = InputValidator.validate_user_id(user_id)
     if not user_result.is_valid:
