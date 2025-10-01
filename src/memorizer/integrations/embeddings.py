@@ -9,11 +9,11 @@ import logging
 import os
 import time
 from abc import ABC, abstractmethod
-from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+from cachetools import TTLCache
 
 logger = logging.getLogger(__name__)
 
@@ -289,78 +289,7 @@ class MockEmbeddingProvider(EmbeddingProvider):
         return self.dimension
 
 
-class LRUCache:
-    """LRU cache with TTL support to prevent memory leaks."""
-
-    def __init__(self, max_size: int = 1000, ttl: int = 3600):
-        self.max_size = max_size
-        self.ttl = ttl
-        self.cache = OrderedDict()
-        self.timestamps = {}
-
-    def _is_expired(self, key: str) -> bool:
-        """Check if cache entry is expired."""
-        if key not in self.timestamps:
-            return True
-        return time.time() - self.timestamps[key] > self.ttl
-
-    def _cleanup_expired(self):
-        """Remove expired entries."""
-        current_time = time.time()
-        expired_keys = [
-            key
-            for key, timestamp in self.timestamps.items()
-            if current_time - timestamp > self.ttl
-        ]
-        for key in expired_keys:
-            self.cache.pop(key, None)
-            self.timestamps.pop(key, None)
-
-    def _evict_lru(self):
-        """Evict least recently used entry."""
-        if self.cache:
-            key, _ = self.cache.popitem(last=False)
-            self.timestamps.pop(key, None)
-
-    def get(self, key: str) -> Optional[Any]:
-        """Get value from cache."""
-        if key not in self.cache or self._is_expired(key):
-            self.cache.pop(key, None)
-            self.timestamps.pop(key, None)
-            return None
-
-        # Move to end (most recently used)
-        value = self.cache.pop(key)
-        self.cache[key] = value
-        return value
-
-    def set(self, key: str, value: Any):
-        """Set value in cache."""
-        # Clean up expired entries first
-        self._cleanup_expired()
-
-        # Remove existing entry if present
-        if key in self.cache:
-            self.cache.pop(key)
-            self.timestamps.pop(key, None)
-
-        # Evict LRU if at capacity
-        if len(self.cache) >= self.max_size:
-            self._evict_lru()
-
-        # Add new entry
-        self.cache[key] = value
-        self.timestamps[key] = time.time()
-
-    def clear(self):
-        """Clear all cache entries."""
-        self.cache.clear()
-        self.timestamps.clear()
-
-    def size(self) -> int:
-        """Get current cache size."""
-        self._cleanup_expired()
-        return len(self.cache)
+# Removed custom LRU cache implementation - now using cachetools.TTLCache
 
 
 class EmbeddingManager:
@@ -369,8 +298,8 @@ class EmbeddingManager:
     def __init__(self, config: EmbeddingConfig):
         self.config = config
         self.provider = self._create_provider()
-        # Use LRU cache with size limit and TTL to prevent memory leaks
-        self.cache = LRUCache(max_size=1000, ttl=3600)  # 1000 entries, 1 hour TTL
+        # Use cachetools TTLCache for automatic expiration and LRU eviction
+        self.cache = TTLCache(maxsize=1000, ttl=3600)  # 1000 entries, 1 hour TTL
 
     def _create_provider(self) -> EmbeddingProvider:
         """Create embedding provider based on configuration."""
@@ -391,15 +320,14 @@ class EmbeddingManager:
         """Get embedding for text with optional caching."""
         if use_cache:
             cache_key = self._get_cache_key(text)
-            cached_embedding = self.cache.get(cache_key)
-            if cached_embedding is not None:
-                return cached_embedding
+            if cache_key in self.cache:
+                return self.cache[cache_key]
 
         try:
             embedding = self.provider.embed_text(text)
 
             if use_cache:
-                self.cache.set(cache_key, embedding)
+                self.cache[cache_key] = embedding
 
             return embedding
         except Exception as e:
@@ -420,9 +348,8 @@ class EmbeddingManager:
         if use_cache:
             for i, text in enumerate(texts):
                 cache_key = self._get_cache_key(text)
-                cached_embedding = self.cache.get(cache_key)
-                if cached_embedding is not None:
-                    embeddings.append(cached_embedding)
+                if cache_key in self.cache:
+                    embeddings.append(self.cache[cache_key])
                 else:
                     embeddings.append(None)
                     uncached_texts.append(text)
@@ -440,7 +367,7 @@ class EmbeddingManager:
                 if use_cache:
                     for i, embedding in enumerate(uncached_embeddings):
                         cache_key = self._get_cache_key(uncached_texts[i])
-                        self.cache.set(cache_key, embedding)
+                        self.cache[cache_key] = embedding
                         embeddings[uncached_indices[i]] = embedding
                 else:
                     for i, embedding in enumerate(uncached_embeddings):
@@ -512,8 +439,8 @@ def get_cache_stats() -> Dict[str, Any]:
     """Get embedding cache statistics."""
     manager = get_embedding_manager()
     return {
-        "cache_size": manager.cache.size(),
-        "max_cache_size": manager.cache.max_size,
+        "cache_size": len(manager.cache),
+        "max_cache_size": manager.cache.maxsize,
         "cache_ttl": manager.cache.ttl,
         "provider": manager.config.provider,
         "model": manager.config.model,

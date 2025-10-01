@@ -1,36 +1,52 @@
 """
 pii_detection.py
 PII (Personally Identifiable Information) detection and sanitization module.
-Critical for production safety before sending data to external LLM providers.
+Uses Microsoft Presidio for production-grade PII detection.
 """
 
-import re
 import logging
-from typing import Dict, List, Set, Tuple, Optional, Any
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
 
 logger = logging.getLogger(__name__)
 
+# Try to import presidio, fall back to basic regex if not available
+try:
+    from presidio_analyzer import AnalyzerEngine
+    from presidio_analyzer.nlp_engine import NlpEngineProvider
+    from presidio_anonymizer import AnonymizerEngine
+    from presidio_anonymizer.entities import OperatorConfig
+    PRESIDIO_AVAILABLE = True
+    logger.info("Presidio PII detection available")
+except ImportError:
+    PRESIDIO_AVAILABLE = False
+    logger.warning("Presidio not available, using fallback PII detection")
+    import re
+
 
 class PIIType(Enum):
     """Types of PII that can be detected."""
-    EMAIL = "email"
-    PHONE = "phone"
-    SSN = "ssn"
-    CREDIT_CARD = "credit_card"
-    IP_ADDRESS = "ip_address"
-    NAME = "name"
-    ADDRESS = "address"
-    DATE_OF_BIRTH = "date_of_birth"
-    PASSPORT = "passport"
-    DRIVER_LICENSE = "driver_license"
+    EMAIL = "EMAIL_ADDRESS"
+    PHONE = "PHONE_NUMBER"
+    SSN = "US_SSN"
+    CREDIT_CARD = "CREDIT_CARD"
+    IP_ADDRESS = "IP_ADDRESS"
+    NAME = "PERSON"
+    ADDRESS = "LOCATION"
+    DATE_OF_BIRTH = "DATE_TIME"
+    PASSPORT = "US_PASSPORT"
+    DRIVER_LICENSE = "US_DRIVER_LICENSE"
+    IBAN = "IBAN_CODE"
+    CRYPTO = "CRYPTO"
+    MEDICAL_LICENSE = "MEDICAL_LICENSE"
+    URL = "URL"
 
 
 @dataclass
 class PIIDetection:
     """Result of PII detection."""
-    pii_type: PIIType
+    pii_type: str
     value: str
     start_pos: int
     end_pos: int
@@ -38,260 +54,234 @@ class PIIDetection:
 
 
 class PIIDetector:
-    """Detects and handles PII in text content."""
-    
-    def __init__(self):
-        """Initialize PII detector with compiled regex patterns."""
-        self.patterns = self._compile_patterns()
-        self.sanitization_map = {}
-        logger.info("PII detector initialized")
-    
-    def _compile_patterns(self) -> Dict[PIIType, re.Pattern]:
-        """Compile regex patterns for PII detection."""
-        patterns = {
-            # Email addresses
-            PIIType.EMAIL: re.compile(
+    """Detects and handles PII in text content using Presidio."""
+
+    def __init__(self, language: str = "en"):
+        """
+        Initialize PII detector with Presidio engine.
+
+        Args:
+            language: Language code for NLP processing
+        """
+        self.language = language
+
+        if PRESIDIO_AVAILABLE:
+            # Initialize Presidio analyzer with NLP support
+            try:
+                provider = NlpEngineProvider()
+                nlp_configuration = {
+                    "nlp_engine_name": "spacy",
+                    "models": [{"lang_code": language, "model_name": "en_core_web_sm"}],
+                }
+                nlp_engine = provider.create_engine()
+                self.analyzer = AnalyzerEngine(nlp_engine=nlp_engine)
+                self.anonymizer = AnonymizerEngine()
+                logger.info("Presidio PII detector initialized with NLP support")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Presidio with NLP, using basic: {e}")
+                self.analyzer = AnalyzerEngine()
+                self.anonymizer = AnonymizerEngine()
+        else:
+            # Fallback to basic regex patterns
+            self.analyzer = None
+            self.anonymizer = None
+            self._fallback_patterns = self._compile_fallback_patterns()
+            logger.info("Using fallback regex-based PII detection")
+
+    def _compile_fallback_patterns(self) -> Dict[str, Any]:
+        """Compile basic regex patterns for fallback detection."""
+        return {
+            "EMAIL_ADDRESS": re.compile(
                 r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
                 re.IGNORECASE
             ),
-            
-            # Phone numbers (US format)
-            PIIType.PHONE: re.compile(
+            "PHONE_NUMBER": re.compile(
                 r'(\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})'
             ),
-            
-            # Social Security Numbers
-            PIIType.SSN: re.compile(
+            "US_SSN": re.compile(
                 r'\b(?!000|666|9\d{2})\d{3}[-.\s]?(?!00)\d{2}[-.\s]?(?!0000)\d{4}\b'
             ),
-            
-            # Credit card numbers (basic pattern)
-            PIIType.CREDIT_CARD: re.compile(
-                r'\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|3[0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b'
+            "CREDIT_CARD": re.compile(
+                r'\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})\b'
             ),
-            
-            # IP addresses
-            PIIType.IP_ADDRESS: re.compile(
+            "IP_ADDRESS": re.compile(
                 r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
             ),
-            
-            # Names (basic pattern - first letter capitalized words)
-            PIIType.NAME: re.compile(
-                r'\b[A-Z][a-z]+ [A-Z][a-z]+\b'
-            ),
-            
-            # Addresses (basic pattern)
-            PIIType.ADDRESS: re.compile(
-                r'\b\d+\s+[A-Za-z\s]+(?:Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Boulevard|Blvd|Way|Place|Pl)\b',
-                re.IGNORECASE
-            ),
-            
-            # Date of birth (various formats)
-            PIIType.DATE_OF_BIRTH: re.compile(
-                r'\b(?:0?[1-9]|1[0-2])[-/](?:0?[1-9]|[12][0-9]|3[01])[-/](?:19|20)\d{2}\b'
-            ),
-            
-            # Passport numbers (basic pattern)
-            PIIType.PASSPORT: re.compile(
-                r'\b[A-Z]{1,2}\d{6,9}\b'
-            ),
-            
-            # Driver's license (basic pattern)
-            PIIType.DRIVER_LICENSE: re.compile(
-                r'\b[A-Z]\d{7,8}\b'
-            ),
         }
-        return patterns
-    
-    def detect_pii(self, text: str) -> List[PIIDetection]:
+
+    def detect_pii(self, text: str, entities: Optional[List[str]] = None) -> List[PIIDetection]:
         """
-        Detect PII in the given text.
-        
+        Detect PII in the given text using Presidio.
+
         Args:
             text: Text content to analyze
-            
+            entities: Specific entity types to detect (None = all)
+
         Returns:
             List of detected PII instances
         """
         if not text or not text.strip():
             return []
-        
-        detections = []
-        
-        for pii_type, pattern in self.patterns.items():
-            for match in pattern.finditer(text):
-                # Calculate confidence based on pattern specificity
-                confidence = self._calculate_confidence(pii_type, match.group())
-                
+
+        if PRESIDIO_AVAILABLE and self.analyzer:
+            return self._detect_with_presidio(text, entities)
+        else:
+            return self._detect_with_fallback(text)
+
+    def _detect_with_presidio(self, text: str, entities: Optional[List[str]] = None) -> List[PIIDetection]:
+        """Use Presidio for PII detection."""
+        try:
+            # Analyze text for PII
+            results = self.analyzer.analyze(
+                text=text,
+                language=self.language,
+                entities=entities
+            )
+
+            # Convert to our PIIDetection format
+            detections = []
+            for result in results:
                 detection = PIIDetection(
-                    pii_type=pii_type,
+                    pii_type=result.entity_type,
+                    value=text[result.start:result.end],
+                    start_pos=result.start,
+                    end_pos=result.end,
+                    confidence=result.score
+                )
+                detections.append(detection)
+
+            logger.debug(f"Detected {len(detections)} PII instances using Presidio")
+            return detections
+
+        except Exception as e:
+            logger.error(f"Presidio PII detection failed: {e}")
+            return []
+
+    def _detect_with_fallback(self, text: str) -> List[PIIDetection]:
+        """Use fallback regex detection when Presidio is unavailable."""
+        detections = []
+
+        for entity_type, pattern in self._fallback_patterns.items():
+            for match in pattern.finditer(text):
+                detection = PIIDetection(
+                    pii_type=entity_type,
                     value=match.group(),
                     start_pos=match.start(),
                     end_pos=match.end(),
-                    confidence=confidence
+                    confidence=0.7  # Lower confidence for regex-only detection
                 )
                 detections.append(detection)
-        
-        # Sort by position for consistent processing
+
         detections.sort(key=lambda x: x.start_pos)
-        
-        logger.debug(f"Detected {len(detections)} PII instances in text")
+        logger.debug(f"Detected {len(detections)} PII instances using fallback")
         return detections
-    
-    def _calculate_confidence(self, pii_type: PIIType, value: str) -> float:
-        """Calculate confidence score for PII detection."""
-        base_confidence = {
-            PIIType.EMAIL: 0.95,
-            PIIType.PHONE: 0.90,
-            PIIType.SSN: 0.95,
-            PIIType.CREDIT_CARD: 0.85,
-            PIIType.IP_ADDRESS: 0.80,
-            PIIType.NAME: 0.60,  # Lower confidence for names
-            PIIType.ADDRESS: 0.70,
-            PIIType.DATE_OF_BIRTH: 0.75,
-            PIIType.PASSPORT: 0.85,
-            PIIType.DRIVER_LICENSE: 0.80,
-        }
-        
-        confidence = base_confidence.get(pii_type, 0.50)
-        
-        # Adjust confidence based on value characteristics
-        if pii_type == PIIType.EMAIL and '@' in value and '.' in value.split('@')[-1]:
-            confidence = min(confidence + 0.05, 1.0)
-        elif pii_type == PIIType.PHONE and len(re.sub(r'[^\d]', '', value)) == 10:
-            confidence = min(confidence + 0.05, 1.0)
-        elif pii_type == PIIType.CREDIT_CARD and self._validate_credit_card(value):
-            confidence = min(confidence + 0.10, 1.0)
-        
-        return confidence
-    
-    def _validate_credit_card(self, number: str) -> bool:
-        """Validate credit card number using Luhn algorithm."""
-        # Remove non-digits
-        digits = re.sub(r'\D', '', number)
-        
-        if len(digits) < 13 or len(digits) > 19:
-            return False
-        
-        # Luhn algorithm
-        total = 0
-        reverse_digits = digits[::-1]
-        
-        for i, digit in enumerate(reverse_digits):
-            n = int(digit)
-            if i % 2 == 1:
-                n *= 2
-                if n > 9:
-                    n = n // 10 + n % 10
-            total += n
-        
-        return total % 10 == 0
-    
-    def sanitize_text(self, text: str, replacement_strategy: str = "mask") -> Tuple[str, Dict[str, Any]]:
+
+    def sanitize_text(
+        self,
+        text: str,
+        anonymize_method: str = "replace",
+        entities: Optional[List[str]] = None
+    ) -> str:
         """
-        Sanitize text by removing or masking PII.
-        
+        Sanitize PII from text using Presidio anonymizer.
+
         Args:
             text: Text to sanitize
-            replacement_strategy: Strategy for replacement ("mask", "remove", "hash")
-            
+            anonymize_method: Method to use ('replace', 'mask', 'hash', 'redact')
+            entities: Specific entity types to anonymize
+
         Returns:
-            Tuple of (sanitized_text, sanitization_info)
+            Sanitized text with PII removed/anonymized
         """
         if not text or not text.strip():
-            return text, {}
-        
-        detections = self.detect_pii(text)
-        if not detections:
-            return text, {"pii_detected": False, "pii_count": 0}
-        
-        sanitized_text = text
-        sanitization_info = {
-            "pii_detected": True,
-            "pii_count": len(detections),
-            "pii_types": list(set(detection.pii_type.value for detection in detections)),
-            "replacements": []
-        }
-        
-        # Process detections in reverse order to maintain positions
-        for detection in reversed(detections):
-            replacement = self._get_replacement(detection, replacement_strategy)
-            sanitized_text = (
-                sanitized_text[:detection.start_pos] + 
-                replacement + 
-                sanitized_text[detection.end_pos:]
+            return text
+
+        if PRESIDIO_AVAILABLE and self.analyzer and self.anonymizer:
+            return self._sanitize_with_presidio(text, anonymize_method, entities)
+        else:
+            return self._sanitize_with_fallback(text)
+
+    def _sanitize_with_presidio(
+        self,
+        text: str,
+        anonymize_method: str = "replace",
+        entities: Optional[List[str]] = None
+    ) -> str:
+        """Use Presidio to sanitize text."""
+        try:
+            # First detect PII
+            analyzer_results = self.analyzer.analyze(
+                text=text,
+                language=self.language,
+                entities=entities
             )
-            
-            sanitization_info["replacements"].append({
-                "pii_type": detection.pii_type.value,
-                "original_value": detection.value,
-                "replacement": replacement,
-                "confidence": detection.confidence
-            })
-        
-        logger.info(f"Sanitized {len(detections)} PII instances using {replacement_strategy} strategy")
-        return sanitized_text, sanitization_info
-    
-    def _get_replacement(self, detection: PIIDetection, strategy: str) -> str:
-        """Get replacement text for PII based on strategy."""
-        if strategy == "mask":
-            if detection.pii_type == PIIType.EMAIL:
-                return "[EMAIL_REDACTED]"
-            elif detection.pii_type == PIIType.PHONE:
-                return "[PHONE_REDACTED]"
-            elif detection.pii_type == PIIType.SSN:
-                return "[SSN_REDACTED]"
-            elif detection.pii_type == PIIType.CREDIT_CARD:
-                return "[CARD_REDACTED]"
-            elif detection.pii_type == PIIType.NAME:
-                return "[NAME_REDACTED]"
-            else:
-                return f"[{detection.pii_type.value.upper()}_REDACTED]"
-        
-        elif strategy == "remove":
-            return ""
-        
-        elif strategy == "hash":
-            import hashlib
-            hash_value = hashlib.sha256(detection.value.encode()).hexdigest()[:8]
-            return f"[HASH_{hash_value}]"
-        
-        else:
-            return "[PII_REDACTED]"
-    
-    def get_pii_summary(self, text: str) -> Dict[str, Any]:
-        """Get summary of PII detection without sanitizing."""
+
+            # Then anonymize
+            operators = {}
+            if anonymize_method == "replace":
+                # Replace with entity type placeholder
+                for result in analyzer_results:
+                    operators[result.entity_type] = OperatorConfig("replace", {"new_value": f"<{result.entity_type}>"})
+            elif anonymize_method == "mask":
+                operators = {"DEFAULT": OperatorConfig("mask", {"chars_to_mask": 100, "masking_char": "*"})}
+            elif anonymize_method == "hash":
+                operators = {"DEFAULT": OperatorConfig("hash")}
+            elif anonymize_method == "redact":
+                operators = {"DEFAULT": OperatorConfig("redact")}
+
+            anonymized_result = self.anonymizer.anonymize(
+                text=text,
+                analyzer_results=analyzer_results,
+                operators=operators
+            )
+
+            return anonymized_result.text
+
+        except Exception as e:
+            logger.error(f"Presidio sanitization failed: {e}")
+            return self._sanitize_with_fallback(text)
+
+    def _sanitize_with_fallback(self, text: str) -> str:
+        """Use fallback regex replacement for sanitization."""
+        sanitized = text
+
+        for entity_type, pattern in self._fallback_patterns.items():
+            sanitized = pattern.sub(f"<{entity_type}>", sanitized)
+
+        return sanitized
+
+    def has_pii(self, text: str, threshold: float = 0.5) -> bool:
+        """
+        Check if text contains PII above confidence threshold.
+
+        Args:
+            text: Text to check
+            threshold: Minimum confidence score to consider
+
+        Returns:
+            True if PII is detected above threshold
+        """
         detections = self.detect_pii(text)
-        
-        if not detections:
-            return {
-                "pii_detected": False,
-                "pii_count": 0,
-                "pii_types": [],
-                "risk_level": "low"
-            }
-        
-        pii_types = [d.pii_type.value for d in detections]
-        unique_types = list(set(pii_types))
-        
-        # Calculate risk level
-        high_risk_types = {PIIType.SSN.value, PIIType.CREDIT_CARD.value, PIIType.PASSPORT.value}
-        medium_risk_types = {PIIType.EMAIL.value, PIIType.PHONE.value, PIIType.DRIVER_LICENSE.value}
-        
-        if any(t in high_risk_types for t in unique_types):
-            risk_level = "high"
-        elif any(t in medium_risk_types for t in unique_types):
-            risk_level = "medium"
-        else:
-            risk_level = "low"
-        
-        return {
-            "pii_detected": True,
-            "pii_count": len(detections),
-            "pii_types": unique_types,
-            "risk_level": risk_level,
-            "high_confidence_count": len([d for d in detections if d.confidence > 0.8])
-        }
+        return any(d.confidence >= threshold for d in detections)
+
+    def get_pii_summary(self, text: str) -> Dict[str, int]:
+        """
+        Get summary of PII types found in text.
+
+        Args:
+            text: Text to analyze
+
+        Returns:
+            Dictionary mapping PII types to counts
+        """
+        detections = self.detect_pii(text)
+        summary = {}
+
+        for detection in detections:
+            pii_type = detection.pii_type
+            summary[pii_type] = summary.get(pii_type, 0) + 1
+
+        return summary
 
 
 # Global PII detector instance
@@ -299,20 +289,26 @@ _pii_detector = None
 
 
 def get_pii_detector() -> PIIDetector:
-    """Get the global PII detector instance."""
+    """Get or create the global PII detector instance."""
     global _pii_detector
     if _pii_detector is None:
         _pii_detector = PIIDetector()
     return _pii_detector
 
 
-def detect_pii_in_text(text: str) -> List[PIIDetection]:
+def detect_pii(text: str) -> List[PIIDetection]:
     """Convenience function to detect PII in text."""
     detector = get_pii_detector()
     return detector.detect_pii(text)
 
 
-def sanitize_text_for_llm(text: str) -> Tuple[str, Dict[str, Any]]:
-    """Convenience function to sanitize text before sending to LLM."""
+def sanitize_text(text: str, method: str = "replace") -> str:
+    """Convenience function to sanitize text."""
     detector = get_pii_detector()
-    return detector.sanitize_text(text, replacement_strategy="mask")
+    return detector.sanitize_text(text, anonymize_method=method)
+
+
+def has_pii(text: str, threshold: float = 0.5) -> bool:
+    """Convenience function to check if text has PII."""
+    detector = get_pii_detector()
+    return detector.has_pii(text, threshold=threshold)
