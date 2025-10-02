@@ -4,14 +4,21 @@ Advanced memory lifecycle management with compression policies and automation.
 """
 
 from .compression_policies import CompressionPolicyManager, CompressionPolicy
-from .lifecycle_manager import MemoryLifecycleManager, LifecycleRule
-from .tier_management import TierManager, MemoryTier
 
 __all__ = [
     "CompressionPolicyManager",
     "CompressionPolicy",
-    "MemoryLifecycleManager",
-    "LifecycleRule",
-    "TierManager",
-    "MemoryTier",
 ]
+
+# Optional components
+try:
+    from .lifecycle_manager import MemoryLifecycleManager, LifecycleRule
+    __all__.extend(["MemoryLifecycleManager", "LifecycleRule"])
+except ImportError:
+    pass
+
+try:
+    from .tier_management import TierManager, MemoryTier
+    __all__.extend(["TierManager", "MemoryTier"])
+except ImportError:
+    pass
