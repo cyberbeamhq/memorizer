@@ -2,7 +2,6 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
-[![CI/CD](https://github.com/yourusername/memorizer/workflows/CI%2FCD%20Pipeline/badge.svg)](https://github.com/yourusername/memorizer/actions)
 
 **A production-ready Python framework for intelligent memory management in AI applications.**
 
